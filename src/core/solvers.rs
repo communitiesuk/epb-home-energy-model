@@ -232,6 +232,4802 @@ pub(crate) fn root<const ARGCOUNT: usize>(
     fsolve(f, x0)
 }
 
+/// Direct port of scipy.optimize.root_scalar (as of scipy 1.14.1), including ports of the
+/// underlying solvers: bisect, brentq, brenth and ridder (implemented in C in scipy), toms748
+/// and newton (covering the newton, secant and halley methods).
+///
+/// Differences from the Python interface:
+/// - extra arguments (`args`) are not supported, as closures can capture these instead
+/// - the only solver-specific option (`k` for toms748) is a field on the options struct
+/// - as `full_output=True` and `disp=False` are always passed by root_scalar to the underlying
+///   solvers, non-convergence is reported in the returned `RootResults` rather than as an error,
+///   and Python's RuntimeWarnings are logged as warnings
+pub mod root_scalar {
+    use std::cell::{Cell, RefCell};
+    use std::fmt;
+    use thiserror::Error;
+    use tracing::warn;
+
+    const DEFAULT_ITER: usize = 100;
+    const DEFAULT_XTOL: f64 = 2e-12;
+    const DEFAULT_RTOL: f64 = 4. * f64::EPSILON;
+
+    const NEWTON_DEFAULT_TOL: f64 = 1.48e-8;
+    const NEWTON_DEFAULT_MAXITER: usize = 50;
+    const NEWTON_DEFAULT_RTOL: f64 = 0.0;
+
+    const TOMS748_DEFAULT_K: usize = 1;
+
+    const CONVERGED: &str = "converged";
+    const CONVERR: &str = "convergence error";
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Method {
+        Bisect,
+        Brentq,
+        Brenth,
+        Ridder,
+        Toms748,
+        Newton,
+        Secant,
+        Halley,
+    }
+
+    impl fmt::Display for Method {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "{}",
+                match self {
+                    Method::Bisect => "bisect",
+                    Method::Brentq => "brentq",
+                    Method::Brenth => "brenth",
+                    Method::Ridder => "ridder",
+                    Method::Toms748 => "toms748",
+                    Method::Newton => "newton",
+                    Method::Secant => "secant",
+                    Method::Halley => "halley",
+                }
+            )
+        }
+    }
+
+    /// The value returned by the objective function. In Python the objective function returns
+    /// either a number, or (when `fprime=True` and/or `fprime2=True`) a sequence containing the
+    /// value followed by the first and (optionally) second derivatives - here these are
+    /// represented by `f64`, `(f64, f64)` and `(f64, f64, f64)` respectively.
+    pub trait ObjectiveOutput: Copy {
+        fn value(&self) -> f64;
+        fn first_derivative(&self) -> Option<f64> {
+            None
+        }
+        fn second_derivative(&self) -> Option<f64> {
+            None
+        }
+    }
+
+    impl ObjectiveOutput for f64 {
+        fn value(&self) -> f64 {
+            *self
+        }
+    }
+
+    impl ObjectiveOutput for (f64, f64) {
+        fn value(&self) -> f64 {
+            self.0
+        }
+        fn first_derivative(&self) -> Option<f64> {
+            Some(self.1)
+        }
+    }
+
+    impl ObjectiveOutput for (f64, f64, f64) {
+        fn value(&self) -> f64 {
+            self.0
+        }
+        fn first_derivative(&self) -> Option<f64> {
+            Some(self.1)
+        }
+        fn second_derivative(&self) -> Option<f64> {
+            Some(self.2)
+        }
+    }
+
+    pub type DerivativeFn<'a> = Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a>;
+
+    /// A scalar function as used internally by the solvers
+    type ScalarFn<'a> = dyn Fn(f64) -> Result<f64, RootScalarError> + 'a;
+
+    /// Equivalent of the values that `fprime` and `fprime2` can take in Python.
+    pub enum Derivative<'a> {
+        /// Equivalent of passing a callable returning the derivative.
+        Function(DerivativeFn<'a>),
+        /// Equivalent of passing `True`: the objective function returns the derivative(s)
+        /// along with its value.
+        FromObjective,
+    }
+
+    impl<'a> Derivative<'a> {
+        pub fn function(func: impl Fn(f64) -> anyhow::Result<f64> + 'a) -> Self {
+            Derivative::Function(Box::new(func))
+        }
+    }
+
+    /// Optional arguments to `root_scalar`, mirroring the keyword arguments of the Python
+    /// function. Use `..Default::default()` for any arguments that are not needed.
+    #[derive(Default)]
+    pub struct RootScalarOptions<'a> {
+        pub method: Option<Method>,
+        pub bracket: Option<(f64, f64)>,
+        pub fprime: Option<Derivative<'a>>,
+        pub fprime2: Option<Derivative<'a>>,
+        pub x0: Option<f64>,
+        pub x1: Option<f64>,
+        pub xtol: Option<f64>,
+        pub rtol: Option<f64>,
+        pub maxiter: Option<usize>,
+        /// Corresponds to the `k` solver option for toms748 (passed in `options` in Python)
+        pub k: Option<usize>,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct RootResults {
+        pub root: f64,
+        /// This is `None` where scipy reports NaN iterations (i.e. when the solver was stopped
+        /// due to the function returning NaN)
+        pub iterations: Option<usize>,
+        pub function_calls: usize,
+        pub converged: bool,
+        pub flag: String,
+        pub method: Method,
+    }
+
+    #[derive(Debug, Error)]
+    pub enum RootScalarError {
+        #[error("ValueError: {0}")]
+        Value(String),
+        #[error("TypeError: {0}")]
+        Type(String),
+        #[error("Error in passed-in function: {0}")]
+        Function(#[from] anyhow::Error),
+    }
+
+    /// Find a root of a scalar function.
+    ///
+    /// Port of scipy.optimize.root_scalar - see its documentation for details of the available
+    /// methods and the arguments each of them requires.
+    pub fn root_scalar<T: ObjectiveOutput>(
+        f: impl Fn(f64) -> anyhow::Result<T>,
+        options: RootScalarOptions,
+    ) -> Result<RootResults, RootScalarError> {
+        let RootScalarOptions {
+            method,
+            bracket,
+            fprime,
+            fprime2,
+            x0,
+            x1,
+            xtol,
+            rtol,
+            maxiter,
+            k,
+        } = options;
+
+        // fun also returns the derivative(s)
+        let (fprime, fprime2) = match (fprime, fprime2) {
+            (_, Some(Derivative::FromObjective)) => (
+                Some(Derivative::FromObjective),
+                Some(Derivative::FromObjective),
+            ),
+            (fprime, fprime2) => (fprime, fprime2),
+        };
+        let is_memoized = matches!(fprime, Some(Derivative::FromObjective));
+        let memoized = MemoizeDer::new(&f);
+
+        let func = |x: f64| -> Result<f64, RootScalarError> {
+            if is_memoized {
+                memoized.call(x)
+            } else {
+                Ok(f(x)?.value())
+            }
+        };
+        let fprime: Option<Box<ScalarFn>> = match fprime {
+            Some(Derivative::Function(fprime)) => Some(Box::new(move |x| Ok(fprime(x)?))),
+            Some(Derivative::FromObjective) => Some(Box::new(|x| memoized.fprime(x))),
+            None => None,
+        };
+        let fprime2: Option<Box<ScalarFn>> = match fprime2 {
+            Some(Derivative::Function(fprime2)) => Some(Box::new(move |x| Ok(fprime2(x)?))),
+            Some(Derivative::FromObjective) => Some(Box::new(|x| memoized.fprime2(x))),
+            None => None,
+        };
+
+        // Pick a method if not specified.
+        // Use the "best" method available for the situation.
+        let method = match method {
+            Some(method) => method,
+            None => {
+                if bracket.is_some() {
+                    Method::Brentq
+                } else if x0.is_some() {
+                    if fprime.is_some() {
+                        if fprime2.is_some() {
+                            Method::Halley
+                        } else {
+                            Method::Newton
+                        }
+                    } else if x1.is_some() {
+                        Method::Secant
+                    } else {
+                        Method::Newton
+                    }
+                } else {
+                    return Err(RootScalarError::Value(
+                        "Unable to select a solver as neither bracket nor starting point provided."
+                            .into(),
+                    ));
+                }
+            }
+        };
+
+        // toms748 is the only underlying solver that accepts `k`
+        if k.is_some() && method != Method::Toms748 {
+            let underlying = match method {
+                Method::Secant | Method::Halley => Method::Newton,
+                method => method,
+            };
+            return Err(RootScalarError::Type(format!(
+                "{underlying}() got an unexpected keyword argument 'k'"
+            )));
+        }
+
+        let mut sol = match method {
+            Method::Bisect | Method::Ridder | Method::Brentq | Method::Brenth | Method::Toms748 => {
+                let (a, b) = bracket.ok_or_else(|| {
+                    RootScalarError::Value(format!("Bracket needed for {method}"))
+                })?;
+                let xtol = xtol.unwrap_or(DEFAULT_XTOL);
+                let rtol = rtol.unwrap_or(DEFAULT_RTOL);
+                let maxiter = maxiter.unwrap_or(DEFAULT_ITER);
+
+                let result = match method {
+                    Method::Toms748 => toms748(
+                        &func,
+                        a,
+                        b,
+                        k.unwrap_or(TOMS748_DEFAULT_K),
+                        xtol,
+                        rtol,
+                        maxiter,
+                    ),
+                    _ => {
+                        let solver = match method {
+                            Method::Bisect => zeros::bisect,
+                            Method::Ridder => zeros::ridder,
+                            Method::Brentq => zeros::brentq,
+                            Method::Brenth => zeros::brenth,
+                            _ => unreachable!(),
+                        };
+                        call_solver(solver, &func, a, b, xtol, rtol, maxiter)
+                    }
+                };
+
+                match result {
+                    Ok(raw) => raw.into_results(method),
+                    // scipy wraps the function so that it raises an error (rather than returning
+                    // incorrect results) when the callable returns a NaN, so the iteration count
+                    // is not available.
+                    Err(Interrupt::NanValue { x, function_calls }) => RootResults {
+                        root: x,
+                        iterations: None,
+                        function_calls,
+                        converged: false,
+                        flag: nan_value_message(x),
+                        method,
+                    },
+                    Err(Interrupt::Error(e)) => return Err(e),
+                }
+            }
+            Method::Secant => {
+                let x0 = x0.ok_or_else(|| {
+                    RootScalarError::Value(format!("x0 must not be None for {method}"))
+                })?;
+                newton(
+                    &func,
+                    x0,
+                    None,
+                    xtol.unwrap_or(NEWTON_DEFAULT_TOL),
+                    maxiter.unwrap_or(NEWTON_DEFAULT_MAXITER),
+                    None,
+                    x1,
+                    rtol.unwrap_or(NEWTON_DEFAULT_RTOL),
+                )?
+            }
+            Method::Newton => {
+                let x0 = x0.ok_or_else(|| {
+                    RootScalarError::Value(format!("x0 must not be None for {method}"))
+                })?;
+                // approximate fprime with finite differences if not provided
+                let approx_fprime = |x: f64| -> Result<f64, RootScalarError> {
+                    approx_derivative_2_point(|x| Ok(f(x)?.value()), x)
+                };
+                let fprime: &ScalarFn = match fprime.as_deref() {
+                    Some(fprime) => fprime,
+                    None => &approx_fprime,
+                };
+                newton(
+                    &func,
+                    x0,
+                    Some(fprime),
+                    xtol.unwrap_or(NEWTON_DEFAULT_TOL),
+                    maxiter.unwrap_or(NEWTON_DEFAULT_MAXITER),
+                    None,
+                    None,
+                    rtol.unwrap_or(NEWTON_DEFAULT_RTOL),
+                )?
+            }
+            Method::Halley => {
+                let x0 = x0.ok_or_else(|| {
+                    RootScalarError::Value(format!("x0 must not be None for {method}"))
+                })?;
+                let fprime = fprime.as_deref().ok_or_else(|| {
+                    RootScalarError::Value(format!("fprime must be specified for {method}"))
+                })?;
+                let fprime2 = fprime2.as_deref().ok_or_else(|| {
+                    RootScalarError::Value(format!("fprime2 must be specified for {method}"))
+                })?;
+                newton(
+                    &func,
+                    x0,
+                    Some(fprime),
+                    xtol.unwrap_or(NEWTON_DEFAULT_TOL),
+                    maxiter.unwrap_or(NEWTON_DEFAULT_MAXITER),
+                    Some(fprime2),
+                    None,
+                    rtol.unwrap_or(NEWTON_DEFAULT_RTOL),
+                )?
+            }
+        };
+
+        if is_memoized {
+            // Replace the function_calls count with the memoized count.
+            // Avoids double and triple-counting.
+            sol.function_calls = memoized.n_calls.get();
+        }
+
+        Ok(sol)
+    }
+
+    /// Caches the value and derivative(s) of the function each time it is called.
+    ///
+    /// This is a simplistic memoizer that calls and caches a single value of `f(x)`.
+    struct MemoizeDer<'a, T, F> {
+        fun: &'a F,
+        vals: RefCell<Option<(f64, T)>>,
+        n_calls: Cell<usize>,
+    }
+
+    impl<'a, T: ObjectiveOutput, F: Fn(f64) -> anyhow::Result<T>> MemoizeDer<'a, T, F> {
+        fn new(fun: &'a F) -> Self {
+            Self {
+                fun,
+                vals: RefCell::new(None),
+                n_calls: Cell::new(0),
+            }
+        }
+
+        fn vals(&self, x: f64) -> Result<T, RootScalarError> {
+            // Derivative may be requested before the function itself, always check
+            if let Some((cached_x, vals)) = *self.vals.borrow() {
+                if x == cached_x {
+                    return Ok(vals);
+                }
+            }
+            let fg = (self.fun)(x)?;
+            *self.vals.borrow_mut() = Some((x, fg));
+            self.n_calls.set(self.n_calls.get() + 1);
+            Ok(fg)
+        }
+
+        fn call(&self, x: f64) -> Result<f64, RootScalarError> {
+            Ok(self.vals(x)?.value())
+        }
+
+        fn fprime(&self, x: f64) -> Result<f64, RootScalarError> {
+            self.vals(x)?.first_derivative().ok_or_else(|| {
+                RootScalarError::Type(
+                    "fprime=True requires the function to return its first derivative".into(),
+                )
+            })
+        }
+
+        fn fprime2(&self, x: f64) -> Result<f64, RootScalarError> {
+            self.vals(x)?.second_derivative().ok_or_else(|| {
+                RootScalarError::Type(
+                    "fprime2=True requires the function to return its second derivative".into(),
+                )
+            })
+        }
+    }
+
+    /// Equivalent of scipy.optimize._numdiff.approx_derivative(f, x0, method='2-point') for a
+    /// scalar function of a scalar, with no bounds.
+    fn approx_derivative_2_point(
+        fun: impl Fn(f64) -> Result<f64, RootScalarError>,
+        x0: f64,
+    ) -> Result<f64, RootScalarError> {
+        let f0 = fun(x0)?;
+        // sign_x0 needs to be 1 when x0 == 0
+        let sign_x0 = if x0 >= 0. { 1. } else { -1. };
+        let rstep = f64::EPSILON.sqrt();
+        let h = rstep * sign_x0 * np_maximum(1.0, x0.abs());
+        let x1 = x0 + h;
+        let dx = x1 - x0; // Recompute dx as exactly representable number.
+        let df = fun(x1)? - f0;
+        Ok(df / dx)
+    }
+
+    /// Raw result tuple from a solver: (root, function calls, iterations, converged)
+    struct RawResult {
+        root: f64,
+        function_calls: usize,
+        iterations: usize,
+        converged: bool,
+    }
+
+    impl RawResult {
+        fn into_results(self, method: Method) -> RootResults {
+            RootResults {
+                root: self.root,
+                iterations: Some(self.iterations),
+                function_calls: self.function_calls,
+                converged: self.converged,
+                flag: if self.converged { CONVERGED } else { CONVERR }.into(),
+                method,
+            }
+        }
+    }
+
+    /// Ways in which a bracketing solver can be interrupted
+    enum Interrupt {
+        /// The function returned NaN (equivalent of the error raised by scipy's _wrap_nan_raise)
+        NanValue {
+            x: f64,
+            function_calls: usize,
+        },
+        Error(RootScalarError),
+    }
+
+    impl From<RootScalarError> for Interrupt {
+        fn from(err: RootScalarError) -> Self {
+            Interrupt::Error(err)
+        }
+    }
+
+    fn value_error(msg: String) -> Interrupt {
+        Interrupt::Error(RootScalarError::Value(msg))
+    }
+
+    fn nan_value_message(x: f64) -> String {
+        format!(
+            "The function value at x={} is NaN; solver cannot continue.",
+            py_repr(x)
+        )
+    }
+
+    /// Equivalent of scipy's _wrap_nan_raise
+    struct NanRaise<'a> {
+        f: &'a ScalarFn<'a>,
+        function_calls: Cell<usize>,
+    }
+
+    impl<'a> NanRaise<'a> {
+        fn new(f: &'a ScalarFn) -> Self {
+            Self {
+                f,
+                function_calls: Cell::new(0),
+            }
+        }
+
+        fn call(&self, x: f64) -> Result<f64, Interrupt> {
+            let fx = (self.f)(x)?;
+            self.function_calls.set(self.function_calls.get() + 1);
+            if fx.is_nan() {
+                return Err(Interrupt::NanValue {
+                    x,
+                    function_calls: self.function_calls.get(),
+                });
+            }
+            Ok(fx)
+        }
+    }
+
+    type ZerosSolver = fn(
+        &dyn Fn(f64) -> Result<f64, Interrupt>,
+        f64,
+        f64,
+        f64,
+        f64,
+        usize,
+        &mut zeros::SolverStats,
+    ) -> Result<f64, Interrupt>;
+
+    /// Equivalent of the Python wrappers bisect/ridder/brentq/brenth plus the call_solver
+    /// function in scipy's zeros.c
+    fn call_solver(
+        solver: ZerosSolver,
+        f: &ScalarFn,
+        a: f64,
+        b: f64,
+        xtol: f64,
+        rtol: f64,
+        maxiter: usize,
+    ) -> Result<RawResult, Interrupt> {
+        if xtol <= 0. {
+            return Err(value_error(format!(
+                "xtol too small ({} <= 0)",
+                py_format_g(xtol)
+            )));
+        }
+        if rtol < DEFAULT_RTOL {
+            return Err(value_error(format!(
+                "rtol too small ({} < {})",
+                py_format_g(rtol),
+                py_format_g(DEFAULT_RTOL)
+            )));
+        }
+        let f = NanRaise::new(f);
+
+        let mut solver_stats = zeros::SolverStats::default();
+        let zero = solver(&|x| f.call(x), a, b, xtol, rtol, maxiter, &mut solver_stats)?;
+
+        let converged = match solver_stats.error_num {
+            zeros::ErrorNum::Converged => true,
+            zeros::ErrorNum::SignErr => {
+                return Err(value_error(
+                    "f(a) and f(b) must have different signs".into(),
+                ))
+            }
+            zeros::ErrorNum::ConvErr => false,
+            zeros::ErrorNum::InProgress => unreachable!("solvers always set a final status"),
+        };
+
+        Ok(RawResult {
+            root: zero,
+            function_calls: solver_stats.funcalls,
+            iterations: solver_stats.iterations,
+            converged,
+        })
+    }
+
+    /// Ports of the C solvers in scipy/optimize/Zeros
+    mod zeros {
+        use super::Interrupt;
+
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub(super) enum ErrorNum {
+            Converged,
+            SignErr,
+            ConvErr,
+            #[default]
+            InProgress,
+        }
+
+        // NB. in the C code iterations is left uninitialised when the solver returns early
+        // (i.e. if a bracket endpoint is a root) - here it is reported as 0
+        #[derive(Debug, Default)]
+        pub(super) struct SolverStats {
+            pub(super) funcalls: usize,
+            pub(super) iterations: usize,
+            pub(super) error_num: ErrorNum,
+        }
+
+        fn signbit(x: f64) -> bool {
+            x.is_sign_negative()
+        }
+
+        pub(super) fn bisect(
+            f: &dyn Fn(f64) -> Result<f64, Interrupt>,
+            mut xa: f64,
+            xb: f64,
+            xtol: f64,
+            rtol: f64,
+            iter: usize,
+            solver_stats: &mut SolverStats,
+        ) -> Result<f64, Interrupt> {
+            solver_stats.error_num = ErrorNum::InProgress;
+
+            let fa = f(xa)?;
+            let fb = f(xb)?;
+            solver_stats.funcalls = 2;
+            if fa == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xa);
+            }
+            if fb == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xb);
+            }
+            if signbit(fa) == signbit(fb) {
+                solver_stats.error_num = ErrorNum::SignErr;
+                return Ok(0.);
+            }
+            let mut dm = xb - xa;
+            solver_stats.iterations = 0;
+            for _ in 0..iter {
+                solver_stats.iterations += 1;
+                dm *= 0.5;
+                let xm = xa + dm;
+                let fm = f(xm)?;
+                solver_stats.funcalls += 1;
+                if signbit(fm) == signbit(fa) {
+                    xa = xm;
+                }
+                if fm == 0. || dm.abs() < xtol + rtol * xm.abs() {
+                    solver_stats.error_num = ErrorNum::Converged;
+                    return Ok(xm);
+                }
+            }
+            solver_stats.error_num = ErrorNum::ConvErr;
+            Ok(xa)
+        }
+
+        pub(super) fn ridder(
+            f: &dyn Fn(f64) -> Result<f64, Interrupt>,
+            mut xa: f64,
+            mut xb: f64,
+            xtol: f64,
+            rtol: f64,
+            iter: usize,
+            solver_stats: &mut SolverStats,
+        ) -> Result<f64, Interrupt> {
+            fn sign(a: f64) -> f64 {
+                if a > 0. {
+                    1.
+                } else {
+                    -1.
+                }
+            }
+
+            let mut xn = 0.0;
+
+            solver_stats.error_num = ErrorNum::InProgress;
+
+            let mut tol = xtol + rtol * c_min(xa.abs(), xb.abs());
+            let mut fa = f(xa)?;
+            let mut fb = f(xb)?;
+            solver_stats.funcalls = 2;
+            if fa == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xa);
+            }
+            if fb == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xb);
+            }
+            if signbit(fa) == signbit(fb) {
+                solver_stats.error_num = ErrorNum::SignErr;
+                return Ok(0.);
+            }
+
+            solver_stats.iterations = 0;
+            for _ in 0..iter {
+                solver_stats.iterations += 1;
+                let dm = 0.5 * (xb - xa);
+                let xm = xa + dm;
+                let fm = f(xm)?;
+                let dn = sign(fb - fa) * dm * fm / (fm * fm - fa * fb).sqrt();
+                xn = xm - sign(dn) * c_min(dn.abs(), dm.abs() - 0.5 * tol);
+                let fn_ = f(xn)?;
+                solver_stats.funcalls += 2;
+                if signbit(fn_) != signbit(fm) {
+                    xa = xn;
+                    fa = fn_;
+                    xb = xm;
+                    fb = fm;
+                } else if signbit(fn_) != signbit(fa) {
+                    xb = xn;
+                    fb = fn_;
+                } else {
+                    xa = xn;
+                    fa = fn_;
+                }
+                tol = xtol + rtol * xn;
+                if fn_ == 0.0 || (xb - xa).abs() < tol {
+                    solver_stats.error_num = ErrorNum::Converged;
+                    return Ok(xn);
+                }
+            }
+            solver_stats.error_num = ErrorNum::ConvErr;
+            Ok(xn)
+        }
+
+        pub(super) fn brentq(
+            f: &dyn Fn(f64) -> Result<f64, Interrupt>,
+            xa: f64,
+            xb: f64,
+            xtol: f64,
+            rtol: f64,
+            iter: usize,
+            solver_stats: &mut SolverStats,
+        ) -> Result<f64, Interrupt> {
+            brent_impl(
+                f,
+                xa,
+                xb,
+                xtol,
+                rtol,
+                iter,
+                solver_stats,
+                BrentVariant::Quadratic,
+            )
+        }
+
+        pub(super) fn brenth(
+            f: &dyn Fn(f64) -> Result<f64, Interrupt>,
+            xa: f64,
+            xb: f64,
+            xtol: f64,
+            rtol: f64,
+            iter: usize,
+            solver_stats: &mut SolverStats,
+        ) -> Result<f64, Interrupt> {
+            brent_impl(
+                f,
+                xa,
+                xb,
+                xtol,
+                rtol,
+                iter,
+                solver_stats,
+                BrentVariant::Hyperbolic,
+            )
+        }
+
+        #[derive(Clone, Copy)]
+        enum BrentVariant {
+            /// brentq: inverse quadratic extrapolation
+            Quadratic,
+            /// brenth: hyperbolic extrapolation
+            Hyperbolic,
+        }
+
+        // brentq.c and brenth.c are identical other than the extrapolation step
+        //
+        // At the top of the loop the situation is the following:
+        //
+        //  1. the root is bracketed between xa and xb
+        //  2. xa is the most recent estimate
+        //  3. xp is the previous estimate
+        //  4. |fp| < |fb|
+        //
+        // The order of xa and xp doesn't matter, but assume xp < xb. Then xa lies to
+        // the right of xp and the assumption is that xa is increasing towards the root.
+        // In this situation we will attempt quadratic extrapolation as long as the
+        // condition
+        //
+        //  *  |fa| < |fp| < |fb|
+        //
+        // is satisfied. That is, the function value is decreasing as we go along.
+        // Note the 4 above implies that the right inequlity already holds.
+        //
+        // The first check is that xa is still to the left of the root. If not, xb is
+        // replaced by xp and the interval reverses, with xb < xa. In this situation
+        // we will try linear interpolation. That this has happened is signaled by the
+        // equality xb == xp;
+        //
+        // The second check is that |fa| < |fb|. If this is not the case, we swap
+        // xa and xb and resort to bisection.
+        #[allow(clippy::too_many_arguments)]
+        fn brent_impl(
+            f: &dyn Fn(f64) -> Result<f64, Interrupt>,
+            xa: f64,
+            xb: f64,
+            xtol: f64,
+            rtol: f64,
+            iter: usize,
+            solver_stats: &mut SolverStats,
+            variant: BrentVariant,
+        ) -> Result<f64, Interrupt> {
+            let mut xpre = xa;
+            let mut xcur = xb;
+            let mut xblk = 0.;
+            let mut fblk = 0.;
+            let mut spre = 0.;
+            let mut scur = 0.;
+            // the tolerance is 2*delta
+            let mut delta;
+
+            solver_stats.error_num = ErrorNum::InProgress;
+
+            let mut fpre = f(xpre)?;
+            let mut fcur = f(xcur)?;
+            solver_stats.funcalls = 2;
+            if fpre == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xpre);
+            }
+            if fcur == 0. {
+                solver_stats.error_num = ErrorNum::Converged;
+                return Ok(xcur);
+            }
+            if signbit(fpre) == signbit(fcur) {
+                solver_stats.error_num = ErrorNum::SignErr;
+                return Ok(0.);
+            }
+            solver_stats.iterations = 0;
+            for _ in 0..iter {
+                solver_stats.iterations += 1;
+                if fpre != 0. && fcur != 0. && (signbit(fpre) != signbit(fcur)) {
+                    xblk = xpre;
+                    fblk = fpre;
+                    scur = xcur - xpre;
+                    spre = scur;
+                }
+                if fblk.abs() < fcur.abs() {
+                    xpre = xcur;
+                    xcur = xblk;
+                    xblk = xpre;
+
+                    fpre = fcur;
+                    fcur = fblk;
+                    fblk = fpre;
+                }
+
+                delta = (xtol + rtol * xcur.abs()) / 2.;
+                let sbis = (xblk - xcur) / 2.;
+                if fcur == 0. || sbis.abs() < delta {
+                    solver_stats.error_num = ErrorNum::Converged;
+                    return Ok(xcur);
+                }
+
+                if spre.abs() > delta && fcur.abs() < fpre.abs() {
+                    let stry = if xpre == xblk {
+                        // interpolate
+                        -fcur * (xcur - xpre) / (fcur - fpre)
+                    } else {
+                        // extrapolate
+                        let dpre = (fpre - fcur) / (xpre - xcur);
+                        let dblk = (fblk - fcur) / (xblk - xcur);
+                        match variant {
+                            BrentVariant::Quadratic => {
+                                -fcur * (fblk * dblk - fpre * dpre) / (dblk * dpre * (fblk - fpre))
+                            }
+                            BrentVariant::Hyperbolic => {
+                                -fcur * (fblk - fpre) / (fblk * dpre - fpre * dblk)
+                            }
+                        }
+                    };
+                    if 2. * stry.abs() < c_min(spre.abs(), 3. * sbis.abs() - delta) {
+                        // good short step
+                        spre = scur;
+                        scur = stry;
+                    } else {
+                        // bisect
+                        spre = sbis;
+                        scur = sbis;
+                    }
+                } else {
+                    // bisect
+                    spre = sbis;
+                    scur = sbis;
+                }
+
+                xpre = xcur;
+                fpre = fcur;
+                if scur.abs() > delta {
+                    xcur += scur;
+                } else {
+                    xcur += if sbis > 0. { delta } else { -delta };
+                }
+
+                fcur = f(xcur)?;
+                solver_stats.funcalls += 1;
+            }
+            solver_stats.error_num = ErrorNum::ConvErr;
+            Ok(xcur)
+        }
+
+        /// Equivalent of the C macro MIN(a, b) ((a) < (b) ? (a) : (b))
+        fn c_min(a: f64, b: f64) -> f64 {
+            if a < b {
+                a
+            } else {
+                b
+            }
+        }
+    }
+
+    /// Port of scipy.optimize.newton for a scalar x0 (with full_output=True, disp=False)
+    #[allow(clippy::too_many_arguments)]
+    fn newton(
+        func: &ScalarFn,
+        x0: f64,
+        fprime: Option<&ScalarFn>,
+        tol: f64,
+        maxiter: usize,
+        fprime2: Option<&ScalarFn>,
+        x1: Option<f64>,
+        rtol: f64,
+    ) -> Result<RootResults, RootScalarError> {
+        if tol <= 0. {
+            return Err(RootScalarError::Value(format!(
+                "tol too small ({} <= 0)",
+                py_format_g(tol)
+            )));
+        }
+        if maxiter < 1 {
+            return Err(RootScalarError::Value(
+                "maxiter must be greater than 0".into(),
+            ));
+        }
+
+        let results = |root: f64,
+                       function_calls: usize,
+                       iterations: usize,
+                       converged: bool,
+                       method: Method| {
+            Ok(RawResult {
+                root,
+                function_calls,
+                iterations,
+                converged,
+            }
+            .into_results(method))
+        };
+
+        let mut p0 = x0;
+        let mut funcalls = 0;
+        // maxiter >= 1, so these will always be set by the loops below
+        let mut p = f64::NAN;
+        let mut itr = 0;
+        let method;
+
+        if let Some(fprime) = fprime {
+            // Newton-Raphson method
+            let mut method_ = Method::Newton;
+            for itr_ in 0..maxiter {
+                itr = itr_;
+                // first evaluate fval
+                let fval = func(p0)?;
+                funcalls += 1;
+                // If fval is 0, a root has been found, then terminate
+                if fval == 0. {
+                    return results(p0, funcalls, itr, true, method_);
+                }
+                let fder = fprime(p0)?;
+                funcalls += 1;
+                if fder == 0. {
+                    warn!("Derivative was zero.");
+                    return results(p0, funcalls, itr + 1, false, method_);
+                }
+                let mut newton_step = fval / fder;
+                if let Some(fprime2) = fprime2 {
+                    let fder2 = fprime2(p0)?;
+                    funcalls += 1;
+                    method_ = Method::Halley;
+                    // Halley's method:
+                    //   newton_step /= (1.0 - 0.5 * newton_step * fder2 / fder)
+                    // Only do it if denominator stays close enough to 1
+                    // Rationale: If 1-adj < 0, then Halley sends x in the
+                    // opposite direction to Newton. Doesn't happen if x is close
+                    // enough to root.
+                    let adj = newton_step * fder2 / fder / 2.;
+                    if adj.abs() < 1. {
+                        newton_step /= 1.0 - adj;
+                    }
+                }
+                p = p0 - newton_step;
+                if np_isclose(p, p0, rtol, tol) {
+                    return results(p, funcalls, itr + 1, true, method_);
+                }
+                p0 = p;
+            }
+            method = method_;
+        } else {
+            // Secant method
+            method = Method::Secant;
+            let mut p1 = match x1 {
+                Some(x1) => {
+                    if x1 == x0 {
+                        return Err(RootScalarError::Value("x1 and x0 must be different".into()));
+                    }
+                    x1
+                }
+                None => {
+                    let eps = 1e-4;
+                    let p1 = x0 * (1. + eps);
+                    p1 + if p1 >= 0. { eps } else { -eps }
+                }
+            };
+            let mut q0 = func(p0)?;
+            funcalls += 1;
+            let mut q1 = func(p1)?;
+            funcalls += 1;
+            if q1.abs() < q0.abs() {
+                std::mem::swap(&mut p0, &mut p1);
+                std::mem::swap(&mut q0, &mut q1);
+            }
+            for itr_ in 0..maxiter {
+                itr = itr_;
+                if q1 == q0 {
+                    if p1 != p0 {
+                        warn!("Tolerance of {} reached.", py_repr(p1 - p0));
+                    }
+                    p = (p1 + p0) / 2.0;
+                    return results(p, funcalls, itr + 1, false, method);
+                } else if q1.abs() > q0.abs() {
+                    p = (-q0 / q1 * p1 + p0) / (1. - q0 / q1);
+                } else {
+                    p = (-q1 / q0 * p0 + p1) / (1. - q1 / q0);
+                }
+                if np_isclose(p, p1, rtol, tol) {
+                    return results(p, funcalls, itr + 1, true, method);
+                }
+                p0 = p1;
+                q0 = q1;
+                p1 = p;
+                q1 = func(p1)?;
+                funcalls += 1;
+            }
+        }
+
+        results(p, funcalls, itr + 1, false, method)
+    }
+
+    // TOMS "Algorithm 748: Enclosing Zeros of Continuous Functions", by
+    //  Alefeld, G. E. and Potra, F. A. and Shi, Yixun
+
+    /// Port of scipy.optimize.toms748 (with full_output=True, disp=False)
+    fn toms748(
+        f: &ScalarFn,
+        a: f64,
+        b: f64,
+        k: usize,
+        xtol: f64,
+        rtol: f64,
+        maxiter: usize,
+    ) -> Result<RawResult, Interrupt> {
+        if xtol <= 0. {
+            return Err(value_error(format!(
+                "xtol too small ({} <= 0)",
+                py_format_g(xtol)
+            )));
+        }
+        if rtol < DEFAULT_RTOL / 4. {
+            return Err(value_error(format!(
+                "rtol too small ({} < {})",
+                py_format_g(rtol),
+                py_format_g(DEFAULT_RTOL / 4.)
+            )));
+        }
+        if maxiter < 1 {
+            return Err(value_error("maxiter must be greater than 0".into()));
+        }
+        if !a.is_finite() {
+            return Err(value_error(format!("a is not finite {}", py_repr(a))));
+        }
+        if !b.is_finite() {
+            return Err(value_error(format!("b is not finite {}", py_repr(b))));
+        }
+        if a >= b {
+            return Err(value_error(format!(
+                "a and b are not an interval [{}, {}]",
+                py_repr(a),
+                py_repr(b)
+            )));
+        }
+        if k < 1 {
+            return Err(value_error(format!("k too small ({k} < 1)")));
+        }
+
+        let f = NanRaise::new(f);
+        let mut solver = Toms748Solver::new(&f, xtol, rtol, maxiter, k);
+        solver.solve(a, b)
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Toms748Status {
+        Converged,
+        ConvErr,
+        InProgress,
+    }
+
+    /// Solve f(x) == 0 using Algorithm748 of Alefeld, Potro & Shi.
+    struct Toms748Solver<'a, 'f> {
+        f: &'a NanRaise<'f>,
+        function_calls: usize,
+        iterations: usize,
+        k: usize,
+        // ab=[a,b] is a global interval containing a root
+        ab: [f64; 2],
+        // fab is function values at a, b
+        fab: [f64; 2],
+        d: Option<f64>,
+        fd: Option<f64>,
+        e: Option<f64>,
+        fe: Option<f64>,
+        xtol: f64,
+        rtol: f64,
+        maxiter: usize,
+    }
+
+    impl<'a, 'f> Toms748Solver<'a, 'f> {
+        const MU: f64 = 0.5;
+        const K_MIN: usize = 1;
+        const K_MAX: usize = 100; // A very high value for real usage. Expect 1, 2, maybe 3.
+
+        fn new(f: &'a NanRaise<'f>, xtol: f64, rtol: f64, maxiter: usize, k: usize) -> Self {
+            // Silently replace a low value of k with 1
+            let mut k = k.max(Self::K_MIN);
+            // Noisily replace a high value of k with K_MAX
+            if k > Self::K_MAX {
+                warn!("toms748: Overriding k: ->{}", Self::K_MAX);
+                k = Self::K_MAX;
+            }
+
+            Self {
+                f,
+                function_calls: 0,
+                iterations: 0,
+                k,
+                ab: [f64::NAN, f64::NAN],
+                fab: [f64::NAN, f64::NAN],
+                d: None,
+                fd: None,
+                e: None,
+                fe: None,
+                xtol,
+                rtol,
+                maxiter,
+            }
+        }
+
+        /// Call the user-supplied function, update book-keeping
+        fn callf(&mut self, x: f64) -> Result<f64, Interrupt> {
+            let fx = self.f.call(x)?;
+            self.function_calls += 1;
+            if !fx.is_finite() {
+                return Err(value_error(format!(
+                    "Invalid function value: f({x:.6}) -> {} ",
+                    py_repr(fx)
+                )));
+            }
+            Ok(fx)
+        }
+
+        /// Package the result and statistics
+        fn get_result(&self, x: f64, converged: bool) -> RawResult {
+            RawResult {
+                root: x,
+                function_calls: self.function_calls,
+                iterations: self.iterations,
+                converged,
+            }
+        }
+
+        fn update_bracket(&mut self, c: f64, fc: f64) -> (f64, f64) {
+            update_bracket(&mut self.ab, &mut self.fab, c, fc)
+        }
+
+        fn ab_midpoint(&self) -> f64 {
+            (self.ab[0] + self.ab[1]) / 2.0
+        }
+
+        /// Prepare for the iterations.
+        fn start(&mut self, a: f64, b: f64) -> Result<(Toms748Status, f64), Interrupt> {
+            self.function_calls = 0;
+            self.iterations = 0;
+
+            self.ab = [a, b];
+            if !a.is_finite() {
+                return Err(value_error(format!("Invalid x value: {} ", py_repr(a))));
+            }
+            if !b.is_finite() {
+                return Err(value_error(format!("Invalid x value: {} ", py_repr(b))));
+            }
+
+            let fa = self.callf(a)?;
+            if fa == 0. {
+                return Ok((Toms748Status::Converged, a));
+            }
+            let fb = self.callf(b)?;
+            if fb == 0. {
+                return Ok((Toms748Status::Converged, b));
+            }
+
+            if np_sign(fb) * np_sign(fa) > 0. {
+                return Err(value_error(format!(
+                    "f(a) and f(b) must have different signs, but f({})={}, f({})={} ",
+                    py_format_e(a),
+                    py_format_e(fa),
+                    py_format_e(b),
+                    py_format_e(fb)
+                )));
+            }
+            self.fab = [fa, fb];
+
+            Ok((Toms748Status::InProgress, self.ab_midpoint()))
+        }
+
+        /// Determine the current status.
+        fn get_status(&self) -> (Toms748Status, f64) {
+            let [a, b] = self.ab;
+            if np_isclose(a, b, self.rtol, self.xtol) {
+                return (Toms748Status::Converged, self.ab_midpoint());
+            }
+            if self.iterations >= self.maxiter {
+                return (Toms748Status::ConvErr, self.ab_midpoint());
+            }
+            (Toms748Status::InProgress, self.ab_midpoint())
+        }
+
+        /// Perform one step in the algorithm.
+        ///
+        /// Implements Algorithm 4.1(k=1) or 4.2(k=2) in [APS1995]
+        fn iterate(&mut self) -> Result<(Toms748Status, f64), Interrupt> {
+            self.iterations += 1;
+            let eps = f64::EPSILON;
+            let (mut d, mut fd, mut e, mut fe) = (self.d, self.fd, self.e, self.fe);
+            let ab_width = self.ab[1] - self.ab[0]; // Need the start width below
+            let mut c = None;
+
+            for nsteps in 2..(self.k + 2) {
+                // If the f-values are sufficiently separated, perform an inverse
+                // polynomial interpolation step. Otherwise, nsteps repeats of
+                // an approximate Newton-Raphson step.
+                if notclose(
+                    &[Some(self.fab[0]), Some(self.fab[1]), fd, fe],
+                    0.,
+                    32. * eps,
+                ) {
+                    let c0 = inverse_poly_zero(
+                        self.ab[0],
+                        self.ab[1],
+                        d.expect("d is set when f-values are not close"),
+                        e.expect("e is set when f-values are not close"),
+                        self.fab[0],
+                        self.fab[1],
+                        fd.expect("fd is set when f-values are not close"),
+                        fe.expect("fe is set when f-values are not close"),
+                    );
+                    if self.ab[0] < c0 && c0 < self.ab[1] {
+                        c = Some(c0);
+                    }
+                }
+                // NB. as in scipy, c is not reset between steps
+                let c_val = match c {
+                    Some(c) => c,
+                    None => {
+                        let c_new = newton_quadratic(
+                            self.ab,
+                            self.fab,
+                            d.expect("d is always set after the first step"),
+                            fd.expect("fd is always set after the first step"),
+                            nsteps,
+                        );
+                        c = Some(c_new);
+                        c_new
+                    }
+                };
+
+                let fc = self.callf(c_val)?;
+                if fc == 0. {
+                    return Ok((Toms748Status::Converged, c_val));
+                }
+
+                // re-bracket
+                e = d;
+                fe = fd;
+                let (new_d, new_fd) = self.update_bracket(c_val, fc);
+                d = Some(new_d);
+                fd = Some(new_fd);
+            }
+
+            // u is the endpoint with the smallest f-value
+            let uix = if self.fab[0].abs() < self.fab[1].abs() {
+                0
+            } else {
+                1
+            };
+            let (u, fu) = (self.ab[uix], self.fab[uix]);
+
+            let a_dd = compute_divided_differences(&self.ab, &self.fab, uix == 0)[1];
+            let mut c = u - 2. * fu / a_dd;
+            if (c - u).abs() > 0.5 * (self.ab[1] - self.ab[0]) {
+                c = self.ab_midpoint();
+            } else if np_isclose(c, u, eps, 0.) {
+                // c didn't change (much).
+                // Either because the f-values at the endpoints have vastly
+                // differing magnitudes, or because the root is very close to
+                // that endpoint
+                let frs = [frexp_exponent(self.fab[0]), frexp_exponent(self.fab[1])];
+                if frs[uix] < frs[1 - uix] - 50 {
+                    // Differ by more than 2**50
+                    c = (31. * self.ab[uix] + self.ab[1 - uix]) / 32.;
+                } else {
+                    // Make a bigger adjustment, about the
+                    // size of the requested tolerance.
+                    let mm = if uix == 0 { 1. } else { -1. };
+                    let adj = mm * c.abs() * self.rtol + mm * self.xtol;
+                    c = u + adj;
+                }
+                if !(self.ab[0] < c && c < self.ab[1]) {
+                    c = self.ab_midpoint();
+                }
+            }
+
+            let fc = self.callf(c)?;
+            if fc == 0. {
+                return Ok((Toms748Status::Converged, c));
+            }
+
+            e = d;
+            fe = fd;
+            let (new_d, new_fd) = self.update_bracket(c, fc);
+            d = Some(new_d);
+            fd = Some(new_fd);
+
+            // If the width of the new interval did not decrease enough, bisect
+            if self.ab[1] - self.ab[0] > Self::MU * ab_width {
+                e = d;
+                fe = fd;
+                let z = self.ab_midpoint();
+                let fz = self.callf(z)?;
+                if fz == 0. {
+                    return Ok((Toms748Status::Converged, z));
+                }
+                let (new_d, new_fd) = self.update_bracket(z, fz);
+                d = Some(new_d);
+                fd = Some(new_fd);
+            }
+
+            // Record d and e for next iteration
+            self.d = d;
+            self.fd = fd;
+            self.e = e;
+            self.fe = fe;
+
+            Ok(self.get_status())
+        }
+
+        /// Solve f(x) = 0 given an interval containing a root.
+        fn solve(&mut self, a: f64, b: f64) -> Result<RawResult, Interrupt> {
+            let (status, xn) = self.start(a, b)?;
+            if status == Toms748Status::Converged {
+                return Ok(self.get_result(xn, true));
+            }
+
+            // The first step only has two x-values.
+            let mut c = secant(self.ab, self.fab);
+            if !(self.ab[0] < c && c < self.ab[1]) {
+                c = self.ab_midpoint();
+            }
+            let fc = self.callf(c)?;
+            if fc == 0. {
+                return Ok(self.get_result(c, true));
+            }
+
+            let (d, fd) = self.update_bracket(c, fc);
+            self.d = Some(d);
+            self.fd = Some(fd);
+            self.e = None;
+            self.fe = None;
+            self.iterations += 1;
+
+            loop {
+                let (status, xn) = self.iterate()?;
+                match status {
+                    Toms748Status::Converged => return Ok(self.get_result(xn, true)),
+                    Toms748Status::ConvErr => return Ok(self.get_result(xn, false)),
+                    Toms748Status::InProgress => {}
+                }
+            }
+        }
+    }
+
+    /// Ensure not None, not 0, all finite, and not very close to each other
+    fn notclose(fs: &[Option<f64>], rtol: f64, atol: f64) -> bool {
+        let Some(fs) = fs.iter().copied().collect::<Option<Vec<f64>>>() else {
+            return false;
+        };
+        fs.iter().all(|&f| f != 0.)
+            && fs.iter().all(|f| f.is_finite())
+            && !(0..fs.len().saturating_sub(1)).any(|i| {
+                fs[i + 1..]
+                    .iter()
+                    .any(|&f| np_isclose(fs[i], f, rtol, atol))
+            })
+    }
+
+    /// Perform a secant step, taking a little care
+    fn secant(xvals: [f64; 2], fvals: [f64; 2]) -> f64 {
+        // Secant has many "mathematically" equivalent formulations
+        // x2 = x0 - (x1 - x0)/(f1 - f0) * f0
+        //    = x1 - (x1 - x0)/(f1 - f0) * f1
+        //    = (-x1 * f0 + x0 * f1) / (f1 - f0)
+        //    = (-f0 / f1 * x1 + x0) / (1 - f0 / f1)
+        //    = (-f1 / f0 * x0 + x1) / (1 - f1 / f0)
+        let [x0, x1] = xvals;
+        let [f0, f1] = fvals;
+        if f0 == f1 {
+            return f64::NAN;
+        }
+        if f1.abs() > f0.abs() {
+            (-f0 / f1 * x1 + x0) / (1. - f0 / f1)
+        } else {
+            (-f1 / f0 * x0 + x1) / (1. - f1 / f0)
+        }
+    }
+
+    /// Update a bracket given (c, fc), return the discarded endpoints.
+    fn update_bracket(ab: &mut [f64; 2], fab: &mut [f64; 2], c: f64, fc: f64) -> (f64, f64) {
+        let [fa, _fb] = *fab;
+        let idx = if np_sign(fa) * np_sign(fc) > 0. { 0 } else { 1 };
+        let (rx, rfx) = (ab[idx], fab[idx]);
+        fab[idx] = fc;
+        ab[idx] = c;
+        (rx, rfx)
+    }
+
+    /// Return the main diagonal (or last row) of the matrix of divided differences for the
+    /// xvals, fvals pairs: f[a], f[a, b] and f[a, b, c].
+    /// If forward is false, return f[c], f[b, c], f[a, b, c].
+    ///
+    /// (Equivalent of scipy's _compute_divided_differences with full=False.)
+    fn compute_divided_differences(xvals: &[f64], fvals: &[f64], forward: bool) -> Vec<f64> {
+        let mut dd = fvals.to_vec();
+        let mut row = fvals.to_vec();
+        dd[0] = if forward {
+            fvals[0]
+        } else {
+            fvals[fvals.len() - 1]
+        };
+        for i in 1..xvals.len() {
+            let len_row = row.len();
+            row = (0..len_row - 1)
+                .map(|j| (row[j + 1] - row[j]) / (xvals[i + j] - xvals[j]))
+                .collect();
+            dd[i] = if forward { row[0] } else { row[row.len() - 1] };
+        }
+        dd
+    }
+
+    /// Compute p(x) for the polynomial passing through the specified locations.
+    ///
+    /// Use Neville's algorithm to compute p(x) where p is the minimal degree
+    /// polynomial passing through the points xvals, fvals
+    fn interpolated_poly(xvals: &[f64], fvals: &[f64], x: f64) -> f64 {
+        let n = xvals.len();
+        let mut q = vec![vec![0.; n]; n];
+        let mut d = vec![vec![0.; n]; n];
+        for i in 0..n {
+            q[i][0] = fvals[i];
+            d[i][0] = fvals[i];
+        }
+        for k in 1..n {
+            for j in 0..(n - k) {
+                let alpha = d[k + j][k - 1] - q[k - 1 + j][k - 1];
+                let diffik = xvals[j] - xvals[k + j];
+                q[k + j][k] = (xvals[k + j] - x) / diffik * alpha;
+                d[k + j][k] = (xvals[j] - x) / diffik * alpha;
+            }
+        }
+        // Expect Q[-1, 1:] to be small relative to Q[-1, 0] as x approaches a root
+        q[n - 1][1..].iter().sum::<f64>() + q[n - 1][0]
+    }
+
+    /// Inverse cubic interpolation f-values -> x-values
+    ///
+    /// Given four points (fa, a), (fb, b), (fc, c), (fd, d) with
+    /// fa, fb, fc, fd all distinct, find poly IP(y) through the 4 points
+    /// and compute x=IP(0).
+    #[allow(clippy::too_many_arguments)]
+    fn inverse_poly_zero(
+        a: f64,
+        b: f64,
+        c: f64,
+        d: f64,
+        fa: f64,
+        fb: f64,
+        fc: f64,
+        fd: f64,
+    ) -> f64 {
+        interpolated_poly(&[fa, fb, fc, fd], &[a, b, c, d], 0.)
+    }
+
+    /// Apply Newton-Raphson like steps, using divided differences to approximate f'
+    ///
+    /// ab is a real interval [a, b] containing a root,
+    /// fab holds the real values of f(a), f(b)
+    /// d is a real number outside [ab, b]
+    /// k is the number of steps to apply
+    fn newton_quadratic(ab: [f64; 2], fab: [f64; 2], d: f64, fd: f64, k: usize) -> f64 {
+        let [a, b] = ab;
+        let [fa, fb] = fab;
+        let dd = compute_divided_differences(&[a, b, d], &[fa, fb, fd], true);
+        let (big_b, big_a) = (dd[1], dd[2]);
+
+        // p is the quadratic polynomial through the 3 points
+        let p = |x: f64| -> f64 {
+            // Horner evaluation of fa + B * (x - a) + A * (x - a) * (x - b)
+            (big_a * (x - b) + big_b) * (x - a) + fa
+        };
+
+        let mut r;
+        if big_a == 0. {
+            r = a - fa / big_b;
+        } else {
+            r = if np_sign(big_a) * np_sign(fa) > 0. {
+                a
+            } else {
+                b
+            };
+            // Apply k Newton-Raphson steps to p(x), starting from x=r
+            for _ in 0..k {
+                let r1 = r - p(r) / (big_b + big_a * (2. * r - a - b));
+                if !(ab[0] < r1 && r1 < ab[1]) {
+                    if ab[0] < r && r < ab[1] {
+                        return r;
+                    }
+                    r = (ab[0] + ab[1]) / 2.0;
+                    break;
+                }
+                r = r1;
+            }
+        }
+
+        r
+    }
+
+    /// Equivalent of np.isclose for scalars (with equal_nan=False)
+    fn np_isclose(a: f64, b: f64, rtol: f64, atol: f64) -> bool {
+        ((a - b).abs() <= atol + rtol * b.abs() && b.is_finite()) || a == b
+    }
+
+    /// Equivalent of np.sign for a scalar
+    fn np_sign(x: f64) -> f64 {
+        if x > 0. {
+            1.
+        } else if x < 0. {
+            -1.
+        } else if x == 0. {
+            0.
+        } else {
+            f64::NAN
+        }
+    }
+
+    /// Equivalent of np.maximum for scalars (which propagates NaNs)
+    fn np_maximum(a: f64, b: f64) -> f64 {
+        if a.is_nan() || b.is_nan() {
+            f64::NAN
+        } else {
+            a.max(b)
+        }
+    }
+
+    /// The exponent from np.frexp, i.e. e such that x = m * 2**e with 0.5 <= |m| < 1
+    fn frexp_exponent(x: f64) -> i32 {
+        if x == 0. || !x.is_finite() {
+            return 0;
+        }
+        let bits = x.to_bits();
+        let biased_exponent = ((bits >> 52) & 0x7ff) as i32;
+        if biased_exponent == 0 {
+            // subnormal - normalise first
+            return frexp_exponent(x * 2f64.powi(54)) - 54;
+        }
+        biased_exponent - 1022
+    }
+
+    /// Format a float as Python's repr() would
+    fn py_repr(x: f64) -> String {
+        if x.is_nan() {
+            return "nan".into();
+        }
+        if x.is_infinite() {
+            return if x > 0. { "inf" } else { "-inf" }.into();
+        }
+        // Rust's {:e} formatting gives the shortest round-trip digits, as does Python's repr
+        let sci = format!("{:e}", x.abs());
+        let (mantissa, exponent) = sci.split_once('e').unwrap();
+        let exponent: i32 = exponent.parse().unwrap();
+        let digits = mantissa.replace('.', "");
+        let sign = if x.is_sign_negative() { "-" } else { "" };
+
+        if (-4..16).contains(&exponent) {
+            let formatted = if exponent >= 0 {
+                let int_len = (exponent + 1) as usize;
+                if digits.len() <= int_len {
+                    format!("{digits}{}.0", "0".repeat(int_len - digits.len()))
+                } else {
+                    format!("{}.{}", &digits[..int_len], &digits[int_len..])
+                }
+            } else {
+                format!("0.{}{digits}", "0".repeat((-exponent - 1) as usize))
+            };
+            format!("{sign}{formatted}")
+        } else {
+            let exp_sign = if exponent < 0 { "-" } else { "+" };
+            format!("{sign}{mantissa}e{exp_sign}{:02}", exponent.abs())
+        }
+    }
+
+    /// Format a float as Python's "%g" would
+    fn py_format_g(x: f64) -> String {
+        if !x.is_finite() {
+            return py_repr(x);
+        }
+        let precision = 6;
+        let sci = format!("{:.*e}", precision - 1, x);
+        let (mantissa, exponent) = sci.split_once('e').unwrap();
+        let exponent: i32 = exponent.parse().unwrap();
+        let strip = |s: &str| -> String {
+            if s.contains('.') {
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            } else {
+                s.to_string()
+            }
+        };
+        if (-4..precision as i32).contains(&exponent) {
+            strip(&format!(
+                "{:.*}",
+                (precision as i32 - 1 - exponent) as usize,
+                x
+            ))
+        } else {
+            let exp_sign = if exponent < 0 { "-" } else { "+" };
+            format!("{}e{exp_sign}{:02}", strip(mantissa), exponent.abs())
+        }
+    }
+
+    /// Format a float as Python's "{:e}" would
+    fn py_format_e(x: f64) -> String {
+        if !x.is_finite() {
+            return py_repr(x);
+        }
+        let sci = format!("{:.6e}", x);
+        let (mantissa, exponent) = sci.split_once('e').unwrap();
+        let exponent: i32 = exponent.parse().unwrap();
+        let exp_sign = if exponent < 0 { "-" } else { "+" };
+        format!("{mantissa}e{exp_sign}{:02}", exponent.abs())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        enum Expected {
+            Ok {
+                root: f64,
+                iterations: Option<usize>,
+                // scipy's C solvers leave iterations uninitialised when an endpoint is a root
+                check_iterations: bool,
+                function_calls: usize,
+                converged: bool,
+                flag: &'static str,
+                method: Method,
+            },
+            ValueErr(&'static str),
+            TypeErr(&'static str),
+        }
+
+        fn check(
+            description: &str,
+            actual: Result<RootResults, RootScalarError>,
+            expected: Expected,
+        ) -> Option<String> {
+            let mismatch = |details: String| Some(format!("{description}: {details}"));
+            match (actual, expected) {
+                (
+                    Ok(actual),
+                    Expected::Ok {
+                        root,
+                        iterations,
+                        check_iterations,
+                        function_calls,
+                        converged,
+                        flag,
+                        method,
+                    },
+                ) => {
+                    let root_matches = actual.root.to_bits() == root.to_bits()
+                        || (actual.root.is_nan() && root.is_nan());
+                    if !root_matches
+                        || (check_iterations && actual.iterations != iterations)
+                        || actual.function_calls != function_calls
+                        || actual.converged != converged
+                        || actual.flag != flag
+                        || actual.method != method
+                    {
+                        return mismatch(format!(
+                            "expected root={root:?} iterations={iterations:?} function_calls={function_calls} converged={converged} flag={flag:?} method={method}, got {actual:?}"
+                        ));
+                    }
+                    None
+                }
+                (Err(RootScalarError::Value(actual)), Expected::ValueErr(expected))
+                | (Err(RootScalarError::Type(actual)), Expected::TypeErr(expected))
+                    if actual == expected =>
+                {
+                    None
+                }
+                (Ok(actual), _) => mismatch(format!("expected an error, got {actual:?}")),
+                (Err(actual), _) => mismatch(format!("unexpected error {actual}")),
+            }
+        }
+
+        #[test]
+        fn test_root_scalar_against_scipy() {
+            // Expected values generated by running scipy.optimize.root_scalar from scipy 1.14.1
+            // on equivalent Python functions
+            let cases: Vec<(&str, Result<RootResults, RootScalarError>, Expected)> = vec![
+                (
+                    "cubic bisect bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000004547_f64,
+                        iterations: Some(41),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cubic brentq bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cubic brenth bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cubic ridder bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.000000000000369_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 14,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) k=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 13,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cubic bisect bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.9999997615814209_f64,
+                        iterations: Some(22),
+                        check_iterations: true,
+                        function_calls: 24,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cubic brentq bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.9999998220370444_f64,
+                        iterations: Some(9),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cubic brenth bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.000000129284141_f64,
+                        iterations: Some(9),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cubic ridder bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000004963614826_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.9999999989165773_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx bisect bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332147577_f64,
+                        iterations: Some(39),
+                        check_iterations: true,
+                        function_calls: 41,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cosx brentq bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151559_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cosx brenth bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.739085133215158_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cosx ridder bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1) k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1) k=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            k: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(2),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx bisect bracket=(0, 1) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851974487305_f64,
+                        iterations: Some(20),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cosx brentq bracket=(0, 1) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851295647751_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cosx brenth bracket=(0, 1) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851305146882_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cosx ridder bracket=(0, 1) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390846399335982_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332150754_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "triple bisect bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000004547_f64,
+                        iterations: Some(41),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "triple brentq bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000002456189_f64,
+                        iterations: Some(100),
+                        check_iterations: true,
+                        function_calls: 102,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "triple brenth bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000002139096_f64,
+                        iterations: Some(100),
+                        check_iterations: true,
+                        function_calls: 102,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "triple ridder bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.9999999999995511_f64,
+                        iterations: Some(34),
+                        check_iterations: true,
+                        function_calls: 70,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "triple toms748 bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000001854_f64,
+                        iterations: Some(31),
+                        check_iterations: true,
+                        function_calls: 89,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "triple toms748 bracket=(0, 3) k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000004496_f64,
+                        iterations: Some(32),
+                        check_iterations: true,
+                        function_calls: 121,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "triple toms748 bracket=(0, 3) k=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((x - 1.) * (x - 1.) * (x - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000001434_f64,
+                        iterations: Some(31),
+                        check_iterations: true,
+                        function_calls: 151,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "kepler bisect bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745907_f64,
+                        iterations: Some(41),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "kepler brentq bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745114_f64,
+                        iterations: Some(9),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "kepler brenth bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(9),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "kepler ridder bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868735368_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 14,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "kepler toms748 bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "kepler toms748 bracket=(0, 3) k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "kepler toms748 bracket=(0, 3) k=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "kepler bisect bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620860576629639_f64,
+                        iterations: Some(22),
+                        check_iterations: true,
+                        function_calls: 24,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "kepler brentq bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866788187573_f64,
+                        iterations: Some(8),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "kepler brenth bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620868679023552_f64,
+                        iterations: Some(8),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "kepler ridder bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620864897324472_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "kepler toms748 bracket=(0, 3) xtol=1e-06 rtol=1e-10",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(1.0e-06_f64),
+                            rtol: Some(1.0e-10_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx bisect bracket=(0, 1) maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.625_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "nanf bisect bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::NAN } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: None,
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"The function value at x=1.0 is NaN; solver cannot continue."#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "inff bisect bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::INFINITY } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.500000000001819_f64,
+                        iterations: Some(39),
+                        check_iterations: true,
+                        function_calls: 41,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cubic fp bisect bracket=(0, 3) fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000004547_f64,
+                        iterations: Some(41),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cosx brentq bracket=(0, 1) maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390910582853698_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "nanf brentq bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::NAN } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: None,
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"The function value at x=1.0 is NaN; solver cannot continue."#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "inff brentq bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::INFINITY } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.49999999999868106_f64,
+                        iterations: Some(42),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cubic fp brentq bracket=(0, 3) fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "cosx brenth bracket=(0, 1) maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390895164441823_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "nanf brenth bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::NAN } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: None,
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"The function value at x=1.0 is NaN; solver cannot continue."#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "inff brenth bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::INFINITY } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.49999999999868106_f64,
+                        iterations: Some(42),
+                        check_iterations: true,
+                        function_calls: 43,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cubic fp brenth bracket=(0, 3) fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Brenth),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brenth,
+                    },
+                ),
+                (
+                    "cosx ridder bracket=(0, 1) maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851399705524_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "nanf ridder bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::NAN } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: None,
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"The function value at x=1.0 is NaN; solver cannot continue."#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "inff ridder bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::INFINITY } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.9999999999009478_f64,
+                        iterations: Some(100),
+                        check_iterations: true,
+                        function_calls: 202,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cubic fp ridder bracket=(0, 3) fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Ridder),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.000000000000369_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 14,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Ridder,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1) maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(3),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332150754_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "nanf toms748 bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::NAN } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: None,
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"The function value at x=1.0 is NaN; solver cannot continue."#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "inff toms748 bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> {
+                            Ok(if x > 0.5 { f64::INFINITY } else { x - 0.7 })
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"Invalid function value: f(1.000000) -> inf "#),
+                ),
+                (
+                    "cubic fp toms748 bracket=(0, 3) fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cosx bisect bracket=(0, 1) maxiter=0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            maxiter: Some(0),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.0_f64,
+                        iterations: Some(0),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Bisect,
+                    },
+                ),
+                (
+                    "cosx toms748 bracket=(0, 1) k=150",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            k: Some(150),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(2),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cubic bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Brentq,
+                    },
+                ),
+                (
+                    "ident toms748 bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.0_f64,
+                        iterations: Some(0),
+                        check_iterations: true,
+                        function_calls: 1,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "shifted toms748 bracket=(0, 1)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 1.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(0),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Toms748,
+                    },
+                ),
+                (
+                    "cubic newton x0=0.2 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic newton x0=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic secant x0=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000000002_f64,
+                        iterations: Some(22),
+                        check_iterations: true,
+                        function_calls: 23,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic secant x0=0.2 x1=0.7",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.2_f64),
+                            x1: Some(0.7_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic halley x0=0.2 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            fprime2: Some(Derivative::function(|x| Ok(6. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cubic fp newton x0=0.2 fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 11,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic fpp halley x0=0.2 fprime=True fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x * x * x - 1., 3. * x * x, 6. * x))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cubic fpp halley x0=0.2 fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x * x * x - 1., 3. * x * x, 6. * x))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cubic fp halley x0=0.2 fprime=True fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x * x * x - 1., 3. * x * x)) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::function(|x| Ok(6. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cubic x0=0.2 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic x0=0.2 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            fprime2: Some(Derivative::function(|x| Ok(6. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cubic x0=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            x0: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(11),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic x0=0.2 x1=0.22000000000000003",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            x0: Some(0.2_f64),
+                            x1: Some(0.22000000000000003_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(22),
+                        check_iterations: true,
+                        function_calls: 23,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic newton x0=0.2 fprime=fn maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            maxiter: Some(3),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 3.7765082728873756_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic newton x0=0.2 fprime=fn rtol=0.001",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            rtol: Some(0.001_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0000000000575857_f64,
+                        iterations: Some(10),
+                        check_iterations: true,
+                        function_calls: 20,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic secant x0=0.2 xtol=0.001 maxiter=5",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.2_f64),
+                            xtol: Some(0.001_f64),
+                            maxiter: Some(5),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.24644402344342206_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic halley x0=0.2 fprime=fn fprime2=fn xtol=1e-12 rtol=1e-12",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            xtol: Some(1.0e-12_f64),
+                            rtol: Some(1.0e-12_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            fprime2: Some(Derivative::function(|x| Ok(6. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 22,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx newton x0=1.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx newton x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx secant x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151608_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cosx secant x0=1.0 x1=1.5",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            x1: Some(1.5_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151827_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cosx halley x0=1.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            fprime2: Some(Derivative::function(|x| Ok(-x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx fp newton x0=1.0 fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x.cos() - x, -x.sin() - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 4,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx fpp halley x0=1.0 fprime=True fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x.cos() - x, -x.sin() - 1., -x.cos()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 3,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx fpp halley x0=1.0 fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x.cos() - x, -x.sin() - 1., -x.cos()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 3,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx fp halley x0=1.0 fprime=True fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> { Ok((x.cos() - x, -x.sin() - 1.)) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::function(|x| Ok(-x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 3,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx x0=1.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx x0=1.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            fprime2: Some(Derivative::function(|x| Ok(-x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "cosx x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx x0=1.0 x1=1.1",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            x1: Some(1.1_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151611_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cosx newton x0=1.0 fprime=fn maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            maxiter: Some(3),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.739085133385284_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx newton x0=1.0 fprime=fn rtol=0.001",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            rtol: Some(0.001_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.739085133385284_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cosx secant x0=1.0 xtol=0.001 maxiter=5",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            xtol: Some(0.001_f64),
+                            maxiter: Some(5),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390865256303388_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 4,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cosx halley x0=1.0 fprime=fn fprime2=fn xtol=1e-12 rtol=1e-12",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x.cos() - x) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            xtol: Some(1.0e-12_f64),
+                            rtol: Some(1.0e-12_f64),
+                            fprime: Some(Derivative::function(|x| Ok(-x.sin() - 1.))),
+                            fprime2: Some(Derivative::function(|x| Ok(-x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.7390851332151607_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler newton x0=1.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler newton x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler secant x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745325_f64,
+                        iterations: Some(8),
+                        check_iterations: true,
+                        function_calls: 9,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "kepler secant x0=1.0 x1=1.5",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            x1: Some(1.5_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.862086686874532_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "kepler halley x0=1.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            fprime2: Some(Derivative::function(|x| Ok(0.9 * x.sin()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 13,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler fp newton x0=1.0 fprime=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> {
+                            Ok((x - 0.9 * x.sin() - 1., 1. - 0.9 * x.cos()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler fpp halley x0=1.0 fprime=True fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x - 0.9 * x.sin() - 1., 1. - 0.9 * x.cos(), 0.9 * x.sin()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler fpp halley x0=1.0 fprime2=True",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64, f64)> {
+                            Ok((x - 0.9 * x.sin() - 1., 1. - 0.9 * x.cos(), 0.9 * x.sin()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime2: Some(Derivative::FromObjective),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler fp halley x0=1.0 fprime=True fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<(f64, f64)> {
+                            Ok((x - 0.9 * x.sin() - 1., 1. - 0.9 * x.cos()))
+                        },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::FromObjective),
+                            fprime2: Some(Derivative::function(|x| Ok(0.9 * x.sin()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 5,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler x0=1.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler x0=1.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            fprime2: Some(Derivative::function(|x| Ok(0.9 * x.sin()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 13,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "kepler x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(6),
+                        check_iterations: true,
+                        function_calls: 12,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler x0=1.0 x1=1.1",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            x0: Some(1.0_f64),
+                            x1: Some(1.1_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745716_f64,
+                        iterations: Some(7),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "kepler newton x0=1.0 fprime=fn maxiter=3",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            maxiter: Some(3),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8638802540484245_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 6,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler newton x0=1.0 fprime=fn rtol=0.001",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            rtol: Some(0.001_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620877869546315_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "kepler secant x0=1.0 xtol=0.001 maxiter=5",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            xtol: Some(0.001_f64),
+                            maxiter: Some(5),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620570720048764_f64,
+                        iterations: Some(5),
+                        check_iterations: true,
+                        function_calls: 7,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "kepler halley x0=1.0 fprime=fn fprime2=fn xtol=1e-12 rtol=1e-12",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 0.9 * x.sin() - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            xtol: Some(1.0e-12_f64),
+                            rtol: Some(1.0e-12_f64),
+                            fprime: Some(Derivative::function(|x| Ok(1. - 0.9 * x.cos()))),
+                            fprime2: Some(Derivative::function(|x| Ok(0.9 * x.sin()))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.8620866868745323_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 13,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Halley,
+                    },
+                ),
+                (
+                    "steep newton x0=0.29",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((1000. * x - 300.).atan()) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.29_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1403199.9271292472_f64,
+                        iterations: Some(4),
+                        check_iterations: true,
+                        function_calls: 8,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "steep secant x0=0.29",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok((1000. * x - 300.).atan()) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.29_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: -9935490040481.354_f64,
+                        iterations: Some(9),
+                        check_iterations: true,
+                        function_calls: 10,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic newton x0=-0.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(-0.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: -0.0_f64,
+                        iterations: Some(1),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic newton x0=-5.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(-5.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(20),
+                        check_iterations: true,
+                        function_calls: 40,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "cubic secant x0=-0.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(-0.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.9999115140982547e-16_f64,
+                        iterations: Some(3),
+                        check_iterations: true,
+                        function_calls: 4,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "sqplus1 newton x0=0.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x + 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(2. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.0_f64,
+                        iterations: Some(1),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "sqplus1 halley x0=0.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x + 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.0_f64),
+                            fprime: Some(Derivative::function(|x| Ok(2. * x))),
+                            fprime2: Some(Derivative::function(|_x| Ok(2.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 0.0_f64,
+                        iterations: Some(1),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "sqplus1 newton x0=0.5 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x + 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.5_f64),
+                            fprime: Some(Derivative::function(|x| Ok(2. * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: -0.8707527744354187_f64,
+                        iterations: Some(50),
+                        check_iterations: true,
+                        function_calls: 100,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "constant secant x0=1.0",
+                    root_scalar(
+                        |_x: f64| -> anyhow::Result<f64> { Ok(1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0001_f64,
+                        iterations: Some(1),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "constant newton x0=1.0",
+                    root_scalar(
+                        |_x: f64| -> anyhow::Result<f64> { Ok(1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(1),
+                        check_iterations: true,
+                        function_calls: 2,
+                        converged: false,
+                        flag: r#"convergence error"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "shifted halley x0=1.0 fprime=fn fprime2=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|_x| Ok(1.))),
+                            fprime2: Some(Derivative::function(|_x| Ok(0.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(0),
+                        check_iterations: true,
+                        function_calls: 1,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "shifted newton x0=1.0 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(1.0_f64),
+                            fprime: Some(Derivative::function(|_x| Ok(1.))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(0),
+                        check_iterations: true,
+                        function_calls: 1,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Newton,
+                    },
+                ),
+                (
+                    "shifted secant x0=1.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(1.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::Ok {
+                        root: 1.0_f64,
+                        iterations: Some(2),
+                        check_iterations: true,
+                        function_calls: 3,
+                        converged: true,
+                        flag: r#"converged"#,
+                        method: Method::Secant,
+                    },
+                ),
+                (
+                    "cubic brentq bracket=(2, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((2.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"f(a) and f(b) must have different signs"#),
+                ),
+                (
+                    "cubic toms748 bracket=(2, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((2.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(
+                        r#"f(a) and f(b) must have different signs, but f(2.000000e+00)=7.000000e+00, f(3.000000e+00)=2.600000e+01 "#,
+                    ),
+                ),
+                (
+                    "cubic toms748 bracket=(3, 0)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((3.0_f64, 0.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"a and b are not an interval [3.0, 0.0]"#),
+                ),
+                (
+                    "cubic brentq bracket=(0, 3) xtol=0.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(0.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"xtol too small (0 <= 0)"#),
+                ),
+                (
+                    "cubic bisect bracket=(0, 3) rtol=1e-17",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Bisect),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            rtol: Some(1.0e-17_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"rtol too small (1e-17 < 8.88178e-16)"#),
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) rtol=1e-17",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            rtol: Some(1.0e-17_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"rtol too small (1e-17 < 2.22045e-16)"#),
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) xtol=-0.001",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            xtol: Some(-0.001_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"xtol too small (-0.001 <= 0)"#),
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) maxiter=0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            maxiter: Some(0),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"maxiter must be greater than 0"#),
+                ),
+                (
+                    "cubic toms748 bracket=(0, 3) k=0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(0),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"k too small (0 < 1)"#),
+                ),
+                (
+                    "cubic toms748 bracket=(0, inf)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Toms748),
+                            bracket: Some((0.0_f64, f64::INFINITY)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"b is not finite inf"#),
+                ),
+                (
+                    "cubic newton x0=0.2 xtol=0.0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            xtol: Some(0.0_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"tol too small (0 <= 0)"#),
+                ),
+                (
+                    "cubic newton x0=0.2 maxiter=0",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            x0: Some(0.2_f64),
+                            maxiter: Some(0),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"maxiter must be greater than 0"#),
+                ),
+                (
+                    "cubic secant x0=0.2 x1=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.2_f64),
+                            x1: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"x1 and x0 must be different"#),
+                ),
+                (
+                    "cubic halley x0=0.2 fprime=fn",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            fprime: Some(Derivative::function(|x| Ok(3. * x * x))),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"fprime2 must be specified for halley"#),
+                ),
+                (
+                    "cubic halley x0=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Halley),
+                            x0: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"fprime must be specified for halley"#),
+                ),
+                (
+                    "cubic brentq x0=0.2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            x0: Some(0.2_f64),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"Bracket needed for brentq"#),
+                ),
+                (
+                    "cubic newton bracket=(0, 3)",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Newton),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"x0 must not be None for newton"#),
+                ),
+                (
+                    "cubic secant",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(r#"x0 must not be None for secant"#),
+                ),
+                (
+                    "cubic",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::ValueErr(
+                        r#"Unable to select a solver as neither bracket nor starting point provided."#,
+                    ),
+                ),
+                (
+                    "cubic brentq bracket=(0, 3) k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Brentq),
+                            bracket: Some((0.0_f64, 3.0_f64)),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::TypeErr(r#"brentq() got an unexpected keyword argument 'k'"#),
+                ),
+                (
+                    "cubic secant x0=0.2 k=2",
+                    root_scalar(
+                        |x: f64| -> anyhow::Result<f64> { Ok(x * x * x - 1.) },
+                        RootScalarOptions {
+                            method: Some(Method::Secant),
+                            x0: Some(0.2_f64),
+                            k: Some(2),
+                            ..Default::default()
+                        },
+                    ),
+                    Expected::TypeErr(r#"newton() got an unexpected keyword argument 'k'"#),
+                ),
+            ];
+            let total = cases.len();
+            let failures: Vec<String> = cases
+                .into_iter()
+                .filter_map(|(description, actual, expected)| check(description, actual, expected))
+                .collect();
+            assert!(
+                failures.is_empty(),
+                "{} of {total} cases failed:\n{}",
+                failures.len(),
+                failures.join("\n")
+            );
+        }
+    }
+}
+
 /// direct port of scipy.integrate.solve_ivp but only including areas used in this library
 pub mod solve_ivp {
     use crate::core::solvers::solve_ivp::base_solver::{DenseOutput, Status};
