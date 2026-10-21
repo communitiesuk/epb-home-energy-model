@@ -1239,6 +1239,8 @@ impl StorageTank {
                     bypass_min_ctrl.into(),
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
+
+                // Save primary gains for internal gains calculation
                 self.pipework_primary_gains_for_timestep
                     .store(primary_gains, Ordering::SeqCst);
 
