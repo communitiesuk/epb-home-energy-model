@@ -71,7 +71,7 @@ impl HeatSourceWet {
     pub(crate) fn energy_output_max(
         &self,
         temp_flow: f64,
-        temperature: f64,
+        temp_return: f64,
         ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -108,13 +108,13 @@ impl HeatSourceWet {
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 // passing default for _temp_return as it is unused
-                battery.energy_output_max(temp_flow, Default::default(), simtime)
+                battery.energy_output_max(temp_flow, temp_return, simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
-                .energy_output_max(temp_flow, temperature, false, simtime)
+                .energy_output_max(temp_flow, temp_return, false, simtime)
                 .map(|x| x.0),
             HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => Ok(hp_water_only.energy_output_max(
-                temperature,
+                temp_return,
                 ignore_standard_ctrl.unwrap_or(false),
                 simtime,
             )),
@@ -246,6 +246,7 @@ impl HeatBatteryWaterService {
             ),
         }
     }
+
     fn energy_output_max(
         &self,
         temp_flow: f64,
@@ -254,12 +255,10 @@ impl HeatBatteryWaterService {
     ) -> anyhow::Result<f64> {
         match self {
             HeatBatteryWaterService::Pcm(service) => {
-                // adds false flag for compilation as part of 1.0.0a9 migration
                 service.energy_output_max(temp_flow, temp_return, simtime, false)
             }
             HeatBatteryWaterService::DryCore(service) => {
                 service.energy_output_max(temp_flow, temp_return, simtime, None)
-                // place holder as part of 1.0.0a9 migration
             }
         }
     }
