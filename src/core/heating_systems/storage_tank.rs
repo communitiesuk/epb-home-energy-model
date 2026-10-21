@@ -3322,10 +3322,6 @@ impl ImmersionHeater {
     /// * `rated_power` - in kW
     /// * `energy_supply_conn`- reference to EnergySupplyConnection object
     /// * `simulation_time` - reference to SimulationTime object
-    /// * `controlmin` - reference to a control object which must select current
-    ///                  the minimum timestep temperature
-    /// * `controlmax` - reference to a control object which must select current
-    ///                  the maximum timestep temperature
     /// * `control` - Reference to a RangeTimeControl object, combining controlmax and controlmin.
     ///               Takes precedence if set.
     /// * `diverter` - reference to a PV diverter object
@@ -4688,6 +4684,43 @@ mod tests {
         )
     }
 
+    #[fixture]
+    fn storage_tank_heat_pump(
+        heat_pump: HeatPumpHotWaterOnly,
+        cold_water_source: Arc<ColdWaterSource>,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_storage_tank: SimulationTime,
+    ) -> StorageTank {
+        StorageTank::new(
+            150.0,
+            1.5,
+            55.0,
+            WaterSupply::ColdWaterSource(cold_water_source.clone()),
+            &simulation_time_for_storage_tank.iter().current_iteration(),
+            IndexMap::from([(
+                "heat_pump".into(),
+                PositionedHeatSource {
+                    heat_source: Arc::new(Mutex::new(HeatSource::Wet(Box::new(
+                        HeatSourceWet::HeatPumpWaterOnly(heat_pump.clone()),
+                    )))),
+                    heater_position: 0.1,
+                    thermostat_position: Some(0.33),
+                },
+            )]),
+            temp_internal_air_fn,
+            external_conditions,
+            false,
+            None,
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
     /// Should allow multiple immersion heaters
     #[rstest]
     fn test_init_multiple_heatsources(
@@ -5059,6 +5092,7 @@ mod tests {
             SimulationTime,
             Arc<RwLock<EnergySupply>>,
         ),
+        storage_tank_heat_pump: StorageTank,
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         // ImmersionHeater as heat source
@@ -5129,6 +5163,27 @@ mod tests {
                 assert_relative_eq!(expected_value, &actual_value, max_relative = 1e-13);
             }
         }
+
+        // With heat pump as a heat source
+        let temp_s3_n = [55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 30.0];
+        let heat_source_name = "heat_pump";
+        let heat_source = storage_tank_heat_pump.heat_source_data[heat_source_name]
+            .clone()
+            .heat_source;
+
+        assert_eq!(
+            storage_tank_heat_pump
+                .potential_energy_input(
+                    &temp_s3_n,
+                    &heat_source.lock(),
+                    heat_source_name,
+                    0,
+                    7,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
+            [3., 0., 0., 0.]
+        );
     }
 
     #[rstest]
