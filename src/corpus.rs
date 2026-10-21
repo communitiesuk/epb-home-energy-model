@@ -6162,7 +6162,7 @@ fn heat_source_from_input(
                         *vol_hw_daily_average,
                         volume,
                         daily_losses,
-                        Some(heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?),
+                        heat_exchanger_surface_area,
                         *in_use_factor_mismatch,
                         *tank_volume_declared,
                         *heat_exchanger_surface_area_declared,
