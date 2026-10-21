@@ -389,7 +389,7 @@ impl StorageTank {
             };
 
             let calc = self.run_heat_sources(
-                temp_after_prev_heat_source.clone(),
+                &temp_after_prev_heat_source,
                 &positioned_heat_source.heat_source.lock(),
                 &heat_source_name,
                 heater_layer,
@@ -757,7 +757,7 @@ impl StorageTank {
 
     fn run_heat_sources(
         &self,
-        temp_s3_n: Vec<f64>,
+        temp_s3_n: &[f64],
         heat_source: &HeatSource,
         heat_source_name: &str,
         heater_layer: usize,
@@ -5558,7 +5558,7 @@ mod tests {
         assert_eq!(
             storage_tank1
                 .run_heat_sources(
-                    temp_s3_n,
+                    &temp_s3_n,
                     &heat_source.lock(),
                     "imheater",
                     heater_layer,
