@@ -6187,7 +6187,6 @@ pub enum HotWaterSource {
     PointOfUse(Arc<PointOfUse>),
     HeatNetwork(Arc<HeatNetworkServiceWaterDirect>),
     HeatBattery(HeatBatteryHotWaterSource),
-    Fake(Arc<dyn HotWaterSourceBehaviour>),
     #[cfg(test)]
     Mock(HotWaterSourceMockKind),
 }
@@ -6224,7 +6223,6 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
-            HotWaterSource::Fake(source) => source.get_cold_water_source().clone(),
             #[cfg(test)]
             HotWaterSource::Mock(source) => source.get_cold_water_source(),
         }
@@ -6251,7 +6249,6 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::HeatBattery(heat_battery_hot_water_source) => {
                 heat_battery_hot_water_source.demand_hot_water(usage_events, simtime)?
             }
-            HotWaterSource::Fake(source) => source.demand_hot_water(usage_events, simtime)?,
             #[cfg(test)]
             HotWaterSource::Mock(source) => source.demand_hot_water(usage_events, simtime)?,
         })
@@ -6285,9 +6282,6 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                     simtime,
                 )
             }
-            HotWaterSource::Fake(source) => {
-                source.get_temp_hot_water(volume_required, volume_required_already, simtime)
-            }
             #[cfg(test)]
             HotWaterSource::Mock(source) => {
                 source.get_temp_hot_water(volume_required, volume_required_already, simtime)
@@ -6307,7 +6301,6 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PointOfUse(_) => None,
             HotWaterSource::HeatNetwork(_) => None,
             HotWaterSource::HeatBattery(_) => None,
-            HotWaterSource::Fake(source) => source.internal_gains(),
             #[cfg(test)]
             HotWaterSource::Mock(source) => source.internal_gains(),
         }
