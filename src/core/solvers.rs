@@ -79,146 +79,267 @@ pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> 
 pub mod bisect {
     use std::fmt;
 
-    pub fn bisect(
-        func: impl Fn(f64) -> anyhow::Result<f64>,
-        a: f64,
-        b: f64,
-        xtol: f64,
-    ) -> Result<(f64, RootResults), BisectError> {
-        let mut a = a;
-        let mut b = b;
+    /// Default tolerance values matching SciPy's defaults:
+    /// `xtol = 2e-12`, `rtol = 4 * f64::EPSILON` (~8.881784197001252e-16), `maxiter = 100`
+    pub const DEFAULT_XTOL: f64 = 2e-12;
+    pub const DEFAULT_RTOL: f64 = 4.0 * f64::EPSILON;
+    pub const DEFAULT_MAXITER: usize = 100;
 
-        let rtol = 8.881784197001252e-16; // 4 * f64::EPSILON
-        let maxiter = 100;
+    /// Errors that can occur during root finding.
+    #[derive(Debug)]
+    pub enum RootError {
+        /// Raised if initial endpoints `a` or `b` are not finite or `f(a)`/`f(b)` evaluated to NaN/Infinity.
+        NonFiniteValue,
+        /// Raised when `f(a)` and `f(b)` do not have opposite signs.
+        SignsNotOpposite {
+            fa: f64,
+            fb: f64,
+        },
+        /// Raised when input tolerance parameters are invalid.
+        InvalidTolerance(String),
+        /// Raised if the algorithm failed to converge within `maxiter` iterations.
+        FailedToConverge {
+            iterations: usize,
+            function_calls: usize,
+            last_val: f64,
+        },
+        ErrorInFunction(anyhow::Error),
+    }
 
-        let mut func_calls = 0;
-        let mut iterations = 0;
-
-        let mut fa = func(a)?;
-        let mut fb = func(b)?;
-        func_calls += 2;
-
-        // 2. Initial bracket validation
-        if fa * fb > 0.0 {
-            return Err(BisectError::Sign(
-                "f(a) and f(b) must have different signs".to_string(),
-            ));
-        }
-
-        // Quick check if endpoints are already perfectly zero
-        if fa == 0.0 {
-            return Ok((
-                a,
-                RootResults {
-                    root: a,
-                    iterations,
-                    function_calls: func_calls,
-                    converged: true,
-                    flag: "converged".into(),
-                },
-            ));
-        }
-        if fb == 0.0 {
-            return Ok((
-                b,
-                RootResults {
-                    root: b,
-                    iterations,
-                    function_calls: func_calls,
-                    converged: true,
-                    flag: "converged".into(),
-                },
-            ));
-        }
-
-        // Orient interval boundaries such that f(a) < 0
-        if fa > 0.0 {
-            std::mem::swap(&mut a, &mut b);
-            std::mem::swap(&mut fa, &mut fb);
-        }
-
-        let mut mid = a;
-
-        // 3. Main Bisection Loop
-        while iterations < maxiter {
-            iterations += 1;
-
-            // Midpoint calculation designed to minimize floating-point roundoff
-            mid = a + (b - a) * 0.5;
-            let fmid = func(mid)?;
-            func_calls += 1;
-
-            if fmid == 0.0 {
-                break;
-            } else if fmid < 0.0 {
-                a = mid;
-            } else {
-                b = mid;
+    impl fmt::Display for RootError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                RootError::NonFiniteValue => {
+                    write!(f, "Function evaluation or bounds returned NaN or Infinity")
+                }
+                RootError::SignsNotOpposite { fa, fb } => {
+                    write!(
+                        f,
+                        "f(a) and f(b) must have different signs (f(a)={}, f(b)={})",
+                        fa, fb
+                    )
+                }
+                RootError::InvalidTolerance(msg) => {
+                    write!(f, "Invalid tolerance parameter: {}", msg)
+                }
+                RootError::FailedToConverge { iterations, .. } => {
+                    write!(f, "Failed to converge after {} iterations", iterations)
+                }
+                RootError::ErrorInFunction(err) => {
+                    write!(f, "Error in function evaluation: {}", err)
+                }
             }
-
-            // SciPy's convergence criterion formula
-            let delta = (b - a).abs();
-            let threshold = xtol + rtol * mid.abs();
-            if delta <= threshold {
-                break;
-            }
-        }
-
-        let converged = iterations <= maxiter;
-        let flag = if converged {
-            "converged".to_string()
-        } else {
-            format!("Failed to converge after {} iterations.", maxiter)
-        };
-
-        let results = RootResults {
-            root: mid,
-            iterations,
-            function_calls: func_calls,
-            converged,
-            flag,
-        };
-
-        if !converged {
-            Err(BisectError::Convergence(results))
-        } else {
-            Ok((mid, results))
         }
     }
 
-    #[derive(Debug, Clone)]
+    impl std::error::Error for RootError {}
+
+    impl From<anyhow::Error> for RootError {
+        fn from(err: anyhow::Error) -> Self {
+            RootError::ErrorInFunction(err)
+        }
+    }
+
+    /// Information detailing the outcome of the root-finding routine.
+    #[derive(Debug, Clone, PartialEq)]
     pub struct RootResults {
+        /// Estimated root value.
         pub root: f64,
+        /// Number of iterations executed.
         pub iterations: usize,
+        /// Total number of function evaluations performed.
         pub function_calls: usize,
+        /// Whether the solver converged to within specified tolerance.
         pub converged: bool,
+        /// Reason string describing the status.
         pub flag: String,
     }
 
-    #[derive(Debug)]
-    pub enum BisectError {
-        Sign(String),
-        Convergence(RootResults),
-        Function(anyhow::Error),
+    /// Options to configure the `bisect` solver.
+    #[derive(Debug, Clone)]
+    pub struct BisectOptions {
+        /// Absolute tolerance for termination (`xtol > 0.0`).
+        pub xtol: f64,
+        /// Relative tolerance for termination (`rtol >= 4 * f64::EPSILON`).
+        pub rtol: f64,
+        /// Maximum number of iterations allowed.
+        pub maxiter: usize,
     }
 
-    impl From<anyhow::Error> for BisectError {
-        fn from(err: anyhow::Error) -> Self {
-            BisectError::Function(err)
-        }
-    }
-
-    impl fmt::Display for BisectError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                BisectError::Sign(msg) => write!(f, "ValueError: {}", msg),
-                BisectError::Convergence(res) => write!(f, "RuntimeError: {}", res.flag),
-                BisectError::Function(err) => write!(f, "Error in passed-in function: {}", err),
+    impl Default for BisectOptions {
+        fn default() -> Self {
+            Self {
+                xtol: DEFAULT_XTOL,
+                rtol: DEFAULT_RTOL,
+                maxiter: DEFAULT_MAXITER,
             }
         }
     }
 
-    impl std::error::Error for BisectError {}
+    /// Finds a root of a function `f` within a bracketing interval `[a, b]` using bisection.
+    ///
+    /// # Arguments
+    /// * `f` - A continuous function/closure taking `f64` and returning `f64`.
+    /// * `a` - Left endpoint of the interval.
+    /// * `b` - Right endpoint of the interval.
+    /// * `options` - Configuration settings for `xtol`, `rtol`, and `maxiter` (pass `None` for defaults).
+    ///
+    /// # Returns
+    /// Returns `Ok(RootResults)` containing the computed root and detailed convergence metadata,
+    /// or `Err(RootError)` if invalid inputs or failed convergence occurred.
+    pub fn bisect<F>(
+        mut f: F,
+        mut a: f64,
+        mut b: f64,
+        options: Option<BisectOptions>,
+    ) -> Result<RootResults, RootError>
+    where
+        F: FnMut(f64) -> anyhow::Result<f64>,
+    {
+        let opts = options.unwrap_or_default();
+
+        // Validate parameters
+        if opts.xtol <= 0.0 {
+            return Err(RootError::InvalidTolerance(format!(
+                "xtol must be positive, got {}",
+                opts.xtol
+            )));
+        }
+        if opts.rtol < DEFAULT_RTOL {
+            return Err(RootError::InvalidTolerance(format!(
+                "rtol too small ({} < {})",
+                opts.rtol, DEFAULT_RTOL
+            )));
+        }
+
+        if !a.is_finite() || !b.is_finite() {
+            return Err(RootError::NonFiniteValue);
+        }
+
+        // Initial function evaluations
+        let mut fa = f(a)?;
+        let fb = f(b)?;
+        let mut function_calls = 2;
+
+        if !fa.is_finite() || !fb.is_finite() {
+            return Err(RootError::NonFiniteValue);
+        }
+
+        // Check bracket validity
+        if fa == 0.0 {
+            return Ok(RootResults {
+                root: a,
+                iterations: 0,
+                function_calls,
+                converged: true,
+                flag: "converged".to_string(),
+            });
+        }
+        if fb == 0.0 {
+            return Ok(RootResults {
+                root: b,
+                iterations: 0,
+                function_calls,
+                converged: true,
+                flag: "converged".to_string(),
+            });
+        }
+
+        // Signs must be opposite
+        if (fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0) {
+            return Err(RootError::SignsNotOpposite { fa, fb });
+        }
+
+        let mut iterations = 0;
+        let mut dm = b - a;
+
+        while iterations < opts.maxiter {
+            dm *= 0.5;
+            let xm = a + dm;
+
+            // Check exact midpoint or tiny step convergence
+            if xm == a || xm == b {
+                return Ok(RootResults {
+                    root: xm,
+                    iterations,
+                    function_calls,
+                    converged: true,
+                    flag: "converged".to_string(),
+                });
+            }
+
+            let fm = f(xm)?;
+            function_calls += 1;
+
+            if !fm.is_finite() {
+                return Err(RootError::NonFiniteValue);
+            }
+
+            // Midpoint exact zero
+            if fm == 0.0 {
+                return Ok(RootResults {
+                    root: xm,
+                    iterations: iterations + 1,
+                    function_calls,
+                    converged: true,
+                    flag: "converged".to_string(),
+                });
+            }
+
+            // Update bracket interval
+            if (fm < 0.0 && fa < 0.0) || (fm > 0.0 && fa > 0.0) {
+                a = xm;
+                fa = fm;
+            } else {
+                b = xm;
+            }
+
+            iterations += 1;
+
+            // SciPy termination criteria: |b - a| <= xtol + rtol * |b|
+            let tol = opts.xtol + opts.rtol * xm.abs();
+            if (b - a).abs() <= tol {
+                let root = a + 0.5 * (b - a);
+                return Ok(RootResults {
+                    root,
+                    iterations,
+                    function_calls,
+                    converged: true,
+                    flag: "converged".to_string(),
+                });
+            }
+        }
+
+        // If maxiter exceeded without converging
+        let last_val = a + 0.5 * (b - a);
+        Err(RootError::FailedToConverge {
+            iterations,
+            function_calls,
+            last_val,
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_bisect_basic() {
+            // f(x) = x^2 - 2 (Root at sqrt(2) ≈ 1.4142135623730951)
+            let f = |x: f64| Ok(x * x - 2.0);
+
+            let res = bisect(f, 0.0, 2.0, None).unwrap();
+            assert!(res.converged);
+            assert!((res.root - std::f64::consts::SQRT_2).abs() <= DEFAULT_XTOL);
+        }
+
+        #[test]
+        fn test_bisect_same_sign_error() {
+            let f = |x: f64| Ok(x * x + 1.0);
+            let res = bisect(f, 0.0, 2.0, None);
+            assert!(matches!(res, Err(RootError::SignsNotOpposite { .. })));
+        }
+    }
 }
 
 // A viable equivalent of scipy.optimize.root

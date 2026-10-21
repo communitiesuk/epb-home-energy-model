@@ -7,6 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
+use crate::core::solvers::bisect::{BisectOptions, RootResults};
 use crate::core::solvers::solve_ivp::{SharedIvpSolveFunction, TerminatingEvent};
 use crate::core::solvers::{
     bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
@@ -1884,7 +1885,19 @@ impl Emitters {
             return Ok(temp_flow_target);
         }
 
-        let (temp_return_target, _) = bisect(energy_difference, 0., temp_flow_target, 1e-6)?;
+        let RootResults {
+            root: temp_return_target,
+            ..
+        } = bisect(
+            energy_difference,
+            0.,
+            temp_flow_target,
+            BisectOptions {
+                xtol: 1e-6,
+                ..Default::default()
+            }
+            .into(),
+        )?;
 
         Ok(if temp_return_target > temp_flow_target {
             temp_flow_target
