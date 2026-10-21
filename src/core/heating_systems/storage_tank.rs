@@ -4805,7 +4805,7 @@ mod tests {
                     },
                 ),
                 (
-                    // TODO 1.0.0a9 migration - python uses different wet heat source here
+                    // python uses different wet heat source here (storage tank) that is not valid in rust
                     "heat_pump2".into(),
                     PositionedHeatSource {
                         heat_source: Arc::new(Mutex::new(HeatSource::Wet(Box::new(
