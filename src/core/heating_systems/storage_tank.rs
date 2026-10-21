@@ -768,7 +768,7 @@ impl StorageTank {
         // 6.4.3.8 STEP 6 Energy input into the storage
         // input energy delivered to the storage in kWh - timestep dependent
         let q_x_in_n = self.potential_energy_input(
-            &temp_s3_n,
+            temp_s3_n,
             heat_source,
             heat_source_name,
             heater_layer,
@@ -777,7 +777,7 @@ impl StorageTank {
         )?;
 
         self.calc_final_temps(
-            &temp_s3_n,
+            temp_s3_n,
             heat_source,
             heat_source_name.into(),
             q_x_in_n,
@@ -6586,7 +6586,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO 1.0.0a9 migration"]
     fn test_demand_energy_with_range_time_control(
         mut immersion_heater: ImmersionHeater,
         range_time_control: RangeTimeControl,

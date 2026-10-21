@@ -1000,16 +1000,18 @@ impl RangeTimeControl {
         })
     }
 
+    fn schedule_idx(&self, simulation_time_iteration: &SimulationTimeIteration) -> usize {
+        simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step)
+    }
+
     fn find_setpnt(
         &self,
+        t_idx: usize,
         simulation_time_iteration: &SimulationTimeIteration,
         schedule: &ScheduleOrSetpointControl,
     ) -> Option<f64> {
-        let schedule_idx =
-            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
-
         let setpnt = match schedule {
-            ScheduleOrSetpointControl::Schedule(schedule) => schedule[schedule_idx],
+            ScheduleOrSetpointControl::Schedule(schedule) => schedule[t_idx],
             ScheduleOrSetpointControl::Control(control) => {
                 control.setpnt(simulation_time_iteration)
             }
@@ -1021,8 +1023,6 @@ impl RangeTimeControl {
                 // start of heating period if found
                 let mut setpnt = None;
                 for timesteps_ahead in 1..self.timesteps_advstart + 1 {
-                    let t_idx = simulation_time_iteration.index;
-
                     if schedule.len() <= t_idx + timesteps_ahead as usize {
                         // Stop looking ahead if we have reached the end of the schedule
                         break;
@@ -1049,8 +1049,17 @@ impl RangeTimeControl {
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         // Return setpoint for the current timestep
-        let setpnt_lower = self.find_setpnt(simulation_time_iteration, &self.schedule_lower);
-        let setpnt_upper = self.find_setpnt(simulation_time_iteration, &self.schedule_upper);
+        let schedule_idx = self.schedule_idx(simulation_time_iteration);
+        let setpnt_lower = self.find_setpnt(
+            schedule_idx,
+            simulation_time_iteration,
+            &self.schedule_lower,
+        );
+        let setpnt_upper = self.find_setpnt(
+            schedule_idx,
+            simulation_time_iteration,
+            &self.schedule_upper,
+        );
 
         if setpnt_lower.is_some() && setpnt_upper.is_some() && setpnt_lower > setpnt_upper {
             panic!("setpnt_lower cannot be greater than setpnt_upper");
@@ -1083,9 +1092,14 @@ impl RangeTimeControl {
         Some(setpnt_lower_is_set && setpnt_upper_is_set)
     }
 
-    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        let setpnt_lower = self.find_setpnt(simulation_time_iteration, &self.schedule_lower);
-        let setpnt_upper = self.find_setpnt(simulation_time_iteration, &self.schedule_upper);
+    // this correlates to python's _is_on
+    fn internal_is_on(
+        &self,
+        t_idx: usize,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> bool {
+        let setpnt_lower = self.find_setpnt(t_idx, simulation_time_iteration, &self.schedule_lower);
+        let setpnt_upper = self.find_setpnt(t_idx, simulation_time_iteration, &self.schedule_upper);
 
         if setpnt_upper.is_none() {
             return false;
@@ -1094,17 +1108,18 @@ impl RangeTimeControl {
             return true;
         }
 
-        if simulation_time_iteration.index == 0 {
+        if t_idx == 0 {
             return false;
         }
 
-        let previous_simulation_time_iteration = SimulationTimeIteration {
-            index: simulation_time_iteration.index - 1,
-            time: simulation_time_iteration.time - 1.,
-            timestep: simulation_time_iteration.timestep,
-        };
+        self.internal_is_on(t_idx - 1, simulation_time_iteration)
+    }
 
-        self.is_on(&previous_simulation_time_iteration)
+    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        self.internal_is_on(
+            self.schedule_idx(simulation_time_iteration),
+            simulation_time_iteration,
+        )
     }
 }
 
