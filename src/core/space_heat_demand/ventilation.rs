@@ -1575,16 +1575,22 @@ impl MechanicalVentilation {
 
         // Calculate pressure differences based on system type
         let (delta_p_intake, delta_p_exhaust) = if self.vent_type().has_supply() {
-            let (orientation_intake, pitch_intake, h_path_intake) = if let MechVentData::Mvhr {
-                orientation_intake,
-                pitch_intake,
-                h_path_intake,
-                ..
-            } = self.vent_data
-            {
-                (orientation_intake, pitch_intake, h_path_intake)
-            } else {
-                bail!("Vent type was expected to be MVHR but was Positive Input Ventilation")
+            let (orientation_intake, pitch_intake, h_path_intake) = match self.vent_data {
+                MechVentData::Mvhr {
+                    orientation_intake,
+                    pitch_intake,
+                    h_path_intake,
+                    ..
+                } => (orientation_intake, pitch_intake, h_path_intake),
+                MechVentData::PositiveInputVentilation {
+                    orientation_intake,
+                    pitch_intake,
+                    h_path_intake,
+                    ..
+                } => (orientation_intake, pitch_intake, h_path_intake),
+                _ => unreachable!(
+                    "Vent type has supply so is expected to be MVHR or Positive Input Ventilation"
+                ),
             };
             let pressure_coefficient_intake = get_pressure_coefficient_from_pitch_and_orientation(
                 f_cross,
