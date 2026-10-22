@@ -56,6 +56,7 @@ impl BoilerForBoilerService {
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
         combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         match self {
@@ -70,6 +71,7 @@ impl BoilerForBoilerService {
                 time_elapsed_hp,
                 update_heat_source_state,
                 combi_loss,
+                keep_hot_on,
                 combi_boiler_config,
             ),
             BoilerForBoilerService::DirectElectricBoiler(boiler) => boiler.write().demand_energy(
@@ -83,6 +85,7 @@ impl BoilerForBoilerService {
                 time_elapsed_hp,
                 update_heat_source_state,
                 combi_loss,
+                keep_hot_on,
                 combi_boiler_config,
             ),
         }
@@ -181,7 +184,6 @@ impl BoilerServiceWaterCombi {
                         keep_hot_test_hours,
                         ..
                     } => CombiBoilerConfig::KeepHot {
-                        keep_hot_on: false,
                         keep_hot_fuel: combi_keep_hot_fuel,
                         keep_hot_test_hours: Some(keep_hot_test_hours),
                         keep_hot_control,
@@ -355,7 +357,7 @@ impl BoilerServiceWaterCombi {
 
     /// Demand volume from boiler. Currently combi only
     pub fn demand_hot_water(
-        &mut self,
+        &self,
         usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -383,17 +385,14 @@ impl BoilerServiceWaterCombi {
 
         // get status of timed keep hot facility from control schedule.
         // if combi does not have keep-hot, or it is not timed, then always on
-        if let CombiBoilerConfig::KeepHot {
-            keep_hot_control,
-            keep_hot_on,
+        let keep_hot_on = if let CombiBoilerConfig::KeepHot {
+            keep_hot_control: Some(control),
             ..
-        } = &mut self.combi_boiler_config
+        } = &self.combi_boiler_config
         {
-            if let Some(control) = keep_hot_control {
-                *keep_hot_on = control.is_on(&simtime);
-            } else {
-                *keep_hot_on = true;
-            }
+            control.is_on(&simtime)
+        } else {
+            true
         };
 
         for event in usage_events {
@@ -425,40 +424,31 @@ impl BoilerServiceWaterCombi {
             if event.event_result_type != WaterEventResultType::PipeFlush {
                 // instantaneous combis have a loss per hot water event
                 // also applicable for keep-hot combi when timer is off
-                match &mut self.combi_boiler_config {
-                    CombiBoilerConfig::Instantaneous
-                    | CombiBoilerConfig::KeepHot {
-                        keep_hot_on: false, ..
-                    } => {
-                        // get the required temperature rise and the hot water
-                        // flow rate through the combi boiler for calculating
-                        // instantaneous combi losses
-                        let delta_t = event.temperature_warm - temp_cold_water;
-                        let flowrate_hot = event.volume_hot / event.event_duration;
+                if matches!(self.combi_boiler_config, CombiBoilerConfig::Instantaneous)
+                    || !keep_hot_on
+                {
+                    // get the required temperature rise and the hot water
+                    // flow rate through the combi boiler for calculating
+                    // instantaneous combi losses
+                    let delta_t = event.temperature_warm - temp_cold_water;
+                    let flowrate_hot = event.volume_hot / event.event_duration;
 
-                        let combi_loss = self.boiler_combi_loss_event(
-                            delta_t,
-                            flowrate_hot,
-                            event.event_result_type,
-                        );
-                        energy_demand += combi_loss;
-                        self.combi_loss
-                            .read()
-                            .fetch_add(combi_loss, Ordering::SeqCst);
-                    }
-                    _ => {}
+                    let combi_loss = self.boiler_combi_loss_event(
+                        delta_t,
+                        flowrate_hot,
+                        event.event_result_type,
+                    );
+                    energy_demand += combi_loss;
+                    self.combi_loss
+                        .read()
+                        .fetch_add(combi_loss, Ordering::SeqCst);
                 }
             }
         }
 
         if storage_as_keep_hot
-            || matches!(
-                &self.combi_boiler_config,
-                CombiBoilerConfig::KeepHot {
-                    keep_hot_on: true,
-                    ..
-                }
-            )
+            || (matches!(&self.combi_boiler_config, CombiBoilerConfig::KeepHot { .. })
+                && keep_hot_on)
         {
             // combis with an active keep-hot facility have loss per timestep
             let combi_loss = self.boiler_combi_loss_storage(self.simulation_timestep)?;
@@ -480,6 +470,7 @@ impl BoilerServiceWaterCombi {
                 None,
                 None,
                 self.combi_loss.clone().into(),
+                keep_hot_on.into(),
                 Some(self.combi_boiler_config.clone()),
             )
             .map(|res| res.0)
@@ -639,6 +630,7 @@ impl BoilerServiceWaterRegular {
             Some(update_heat_source_state),
             None,
             None,
+            None,
         )
     }
 
@@ -732,6 +724,7 @@ impl BoilerServiceSpace {
             Some(hybrid_service_bool),
             time_elapsed_hp,
             Some(update_heat_source_state),
+            None,
             None,
             None,
         )
@@ -1441,12 +1434,14 @@ impl Boiler {
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
         combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let combi_loss = combi_loss.unwrap_or(Arc::new(RwLock::new(AtomicF64::new(0.0))));
+        let keep_hot_on = keep_hot_on.unwrap_or(true);
 
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
@@ -1501,6 +1496,7 @@ impl Boiler {
                 _time_start: time_start,
                 _time_elapsed_hp: time_elapsed_hp,
                 combi_loss,
+                keep_hot_on,
                 combi_boiler_config,
             });
         }
@@ -1538,12 +1534,21 @@ impl Boiler {
             let temp_return_feed = service_data.temp_return_feed;
             let energy_output_provided = service_data.energy_output_provided;
 
-            let (combi_boiler_config, combi_loss) = match service_type {
+            // keep_hot_on is represented as an optional boolean in the upstream Python, but then only evaluated as a boolean
+            let (combi_boiler_config, combi_loss, keep_hot_on) = match service_type {
                 ServiceType::WaterCombi => (
                     service_data.combi_boiler_config.as_ref(),
                     service_data.combi_loss.read().load(Ordering::SeqCst),
+                    if matches!(
+                        service_data.combi_boiler_config,
+                        Some(CombiBoilerConfig::KeepHot { .. })
+                    ) {
+                        service_data.keep_hot_on
+                    } else {
+                        false
+                    },
                 ),
-                _ => (None, 0.0),
+                _ => (None, 0.0, false),
             };
 
             // Aggregate space heating services
@@ -1602,11 +1607,7 @@ impl Boiler {
                 // on time steps where the boiler is not firing.
                 let keep_hot_electric = service_type == ServiceType::WaterCombi
                     && match &combi_boiler_config {
-                        Some(CombiBoilerConfig::KeepHot {
-                            keep_hot_fuel,
-                            keep_hot_on: true,
-                            ..
-                        }) => {
+                        Some(CombiBoilerConfig::KeepHot { keep_hot_fuel, .. }) if keep_hot_on => {
                             match keep_hot_fuel {
                                 CombiKeepHotFuel::Electricity => true,
                                 CombiKeepHotFuel::Mixed => {
@@ -1795,7 +1796,6 @@ impl Boiler {
 pub(crate) enum CombiBoilerConfig {
     Instantaneous,
     KeepHot {
-        keep_hot_on: bool,
         keep_hot_fuel: CombiKeepHotFuel,
         keep_hot_test_hours: Option<f64>,
         keep_hot_control: Option<Arc<OnOffTimeControl>>,
@@ -1827,6 +1827,7 @@ pub(crate) struct ServiceResult {
     pub(crate) _time_start: f64,
     pub(crate) _time_elapsed_hp: Option<f64>,
     pub(crate) combi_loss: Arc<RwLock<AtomicF64>>,
+    pub(crate) keep_hot_on: bool,
     pub(crate) combi_boiler_config: Option<CombiBoilerConfig>,
 }
 
@@ -2178,7 +2179,6 @@ mod tests {
             assert_eq!(
                 boiler_service_water.unwrap().combi_boiler_config,
                 CombiBoilerConfig::KeepHot {
-                    keep_hot_on: false,
                     keep_hot_fuel: combi_keep_hot_fuel,
                     keep_hot_test_hours: Some(keep_hot_test_hours),
                     keep_hot_control: None,
@@ -2301,7 +2301,7 @@ mod tests {
 
         #[rstest]
         fn test_boiler_service_water(
-            mut boiler_service: BoilerServiceWaterCombi,
+            boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
         ) {
             let usage_events_all_timesteps = [
@@ -2418,7 +2418,7 @@ mod tests {
                 heat_source_wet: Default::default(),
             };
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_data,
                 "boiler_test".into(),
@@ -2462,7 +2462,7 @@ mod tests {
                 heat_source_wet: Default::default(),
             };
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_data,
                 "boiler_test".into(),
@@ -2512,7 +2512,7 @@ mod tests {
 
             let boiler = Arc::new(RwLock::new(boiler));
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(boiler.clone()),
                 boiler_data,
                 "boiler_test_mixed_firing".into(),
@@ -2578,7 +2578,7 @@ mod tests {
 
             let boiler = Arc::new(RwLock::new(boiler));
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(boiler.clone()),
                 boiler_data,
                 "boiler_test_electricity".into(),
@@ -2648,7 +2648,7 @@ mod tests {
 
             let boiler = Arc::new(RwLock::new(boiler));
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(boiler.clone()),
                 boiler_data,
                 "boiler_test_mixed_not_firing".into(),
@@ -2718,7 +2718,7 @@ mod tests {
 
             let boiler = Arc::new(RwLock::new(boiler));
 
-            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+            let boiler_service_water = BoilerServiceWaterCombi::new(
                 BoilerForBoilerService::Boiler(boiler.clone()),
                 boiler_data,
                 "boiler_test_control".into(),
@@ -2750,7 +2750,7 @@ mod tests {
 
         #[rstest]
         fn test_demand_hot_water_with_no_hot_water(
-            mut boiler_service: BoilerServiceWaterCombi,
+            boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
         ) {
             let actual = boiler_service
@@ -2845,7 +2845,6 @@ mod tests {
                 keep_hot_test_hours: Some(16.),
                 keep_hot_fuel: Default::default(),
                 keep_hot_control: Default::default(),
-                keep_hot_on: Default::default(),
             };
 
             // Tested to M and S
@@ -4002,6 +4001,7 @@ mod tests {
                             None,
                             None,
                             None,
+                            None,
                             None
                         )
                         .unwrap()
@@ -4029,6 +4029,7 @@ mod tests {
                             None,
                             None,
                             None,
+                            None,
                         )
                         .unwrap(),
                     [(24.0, Some(1.0)), (24.0, Some(1.0))][t_idx]
@@ -4052,6 +4053,7 @@ mod tests {
                             None,
                             Some(true),
                             Some(0.5),
+                            None,
                             None,
                             None,
                             None,
@@ -4136,6 +4138,7 @@ mod tests {
                     Some(60.),
                     None,
                     Some(false),
+                    None,
                     None,
                     None,
                     None,

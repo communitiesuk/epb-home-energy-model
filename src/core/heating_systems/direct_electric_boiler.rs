@@ -216,6 +216,7 @@ impl DirectElectricBoiler {
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
         combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         // Account for time control where present. If no control present, assume
@@ -231,6 +232,7 @@ impl DirectElectricBoiler {
         let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let combi_loss = combi_loss.unwrap_or(Arc::new(RwLock::new(AtomicF64::new(0.0))));
+        let keep_hot_on = keep_hot_on.unwrap_or(true);
 
         let time_available = self.time_available(time_start, time_elapsed_hp);
         let energy_output_provided =
@@ -266,6 +268,7 @@ impl DirectElectricBoiler {
                 _time_start: time_start,
                 _time_elapsed_hp: time_elapsed_hp,
                 combi_loss,
+                keep_hot_on,
                 combi_boiler_config,
             };
 
@@ -613,8 +616,8 @@ mod tests {
                     None,
                     None,
                     Some(Arc::new(RwLock::new(1.2.into()))),
+                    None,
                     Some(CombiBoilerConfig::KeepHot {
-                        keep_hot_on: false,
                         keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,
                         keep_hot_test_hours: None,
                         keep_hot_control: None,
@@ -643,6 +646,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    None,
                 )
                 .unwrap();
 
@@ -665,6 +669,7 @@ mod tests {
                     Some(true),
                     None,
                     Some(0.5),
+                    None,
                     None,
                     None,
                     None,
@@ -710,6 +715,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -726,6 +732,7 @@ mod tests {
                 45.,
                 Some(37.),
                 Some(false),
+                None,
                 None,
                 None,
                 None,
@@ -779,6 +786,7 @@ mod tests {
                 45.,
                 Some(60.),
                 Some(false),
+                None,
                 None,
                 None,
                 None,
