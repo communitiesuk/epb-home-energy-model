@@ -3186,7 +3186,7 @@ impl Corpus {
             energy_import.insert(name.clone(), supply.get_energy_import());
             energy_export.insert(name.clone(), supply.get_energy_export());
             grid_to_consumption.insert(name.clone(), supply.get_grid_to_consumption());
-            generation_to_grid.insert(name.clone(), supply.get_energy_export());
+            generation_to_grid.insert(name.clone(), supply.get_energy_export_from_generation());
             energy_export_from_generation
                 .insert(name.clone(), supply.get_energy_export_from_generation());
             energy_generated_consumed.insert(name.clone(), supply.get_energy_generated_consumed());
