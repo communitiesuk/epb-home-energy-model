@@ -2279,7 +2279,7 @@ impl InfiltrationVentilation {
                     return Ok(p_z_ref);
                 }
                 Err(e) => {
-                    last_error.replace(e.into());
+                    last_error.replace(e);
                 }
             }
         }
