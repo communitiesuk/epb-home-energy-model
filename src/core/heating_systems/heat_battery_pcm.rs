@@ -3493,6 +3493,7 @@ mod tests {
                 charging_config: PcmBatteryChargingConfiguration::ChargeControl {
                     control_charge: "hb_charge_control".into(),
                     rated_charge_power: 20.0,
+                    temp_min_useful: None,
                 },
                 simultaneous_charging_and_discharging: simultaneuous_charging_and_discharging
                     .unwrap_or(false),
@@ -5148,6 +5149,7 @@ mod tests {
                 charging_config: PcmBatteryChargingConfiguration::ChargeControl {
                     control_charge: "hb_charge_control".into(),
                     rated_charge_power: 20.0,
+                    temp_min_useful: None,
                 },
                 simultaneous_charging_and_discharging: false,
                 heat_storage_kj_per_k_above_phase_transition: 381.5,

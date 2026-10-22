@@ -5604,6 +5604,12 @@ pub enum PcmBatteryChargingConfiguration {
         /// Rated charging power (unit: kW). Required when HeatSource is absent.
         #[validate(exclusive_minimum = 0.)]
         rated_charge_power: f64,
+
+        /// Minimum useful temperature (°C) used as the SOC=0 reference.
+        /// This is the temperature at which the battery is considered fully
+        /// discharged for SOC calculation purposes. Required when using
+        /// the HeatSource dict configuration (not this variant!)
+        temp_min_useful: Option<f64>,
     },
     /// HeatSource charging fields (mutually exclusive with ControlCharge)
     RangeControl {
@@ -5618,7 +5624,7 @@ pub enum PcmBatteryChargingConfiguration {
         /// Minimum useful temperature (°C) used as the SOC=0 reference.
         /// This is the temperature at which the battery is considered fully
         /// discharged for SOC calculation purposes. Required when using
-        /// the HeatSource dict configuration.
+        /// the HeatSource dict configuration (as in here!)
         temp_min_useful: f64,
 
         /// Primary pipework between hydronic heat source and the heat battery.
@@ -5626,6 +5632,19 @@ pub enum PcmBatteryChargingConfiguration {
         #[validate]
         primary_pipework: Option<Vec<WaterPipework>>,
     },
+}
+
+impl PcmBatteryChargingConfiguration {
+    pub(crate) fn temp_min_useful(&self) -> Option<f64> {
+        match self {
+            PcmBatteryChargingConfiguration::ChargeControl {
+                temp_min_useful, ..
+            } => *temp_min_useful,
+            PcmBatteryChargingConfiguration::RangeControl {
+                temp_min_useful, ..
+            } => Some(*temp_min_useful),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]

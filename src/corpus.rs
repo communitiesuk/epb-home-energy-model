@@ -5827,15 +5827,7 @@ fn heat_source_wet_from_input(
                         energy_supply_conn,
                         simulation_time.as_ref(),
                         external_conditions.clone(),
-                        if let PcmBatteryChargingConfiguration::RangeControl {
-                            temp_min_useful,
-                            ..
-                        } = charging_config
-                        {
-                            Some(*temp_min_useful)
-                        } else {
-                            None
-                        },
+                        charging_config.temp_min_useful(),
                         temp_internal_air_fn.clone(),
                         pcm_charge_control,
                         heat_source_data.clone(),
