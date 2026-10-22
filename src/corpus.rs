@@ -1106,9 +1106,9 @@ impl Corpus {
             .unwrap_or_else(|| input.zone.keys().cloned().collect_vec());
 
         let zones: IndexMap<ArcStr, Arc<Zone>> = zone_processing_order
-            .into_iter()
+            .iter()
             .map(|zone_name| -> anyhow::Result<(ArcStr, Arc<Zone>)> {
-                let zone = &input.zone[&zone_name];
+                let zone = &input.zone[zone_name];
                 Ok((zone_name.clone(), {
                     let zone_for_corpus = zone_from_input(
                         zone,
@@ -1131,7 +1131,7 @@ impl Corpus {
 
         let energy_supply_conn_unmet_demand_zone = set_up_energy_supply_unmet_demand_zones(
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
-            &input.zone,
+            &zone_processing_order,
         );
         let total_floor_area = FSum::with_all(zones.values().map(|zone| zone.area())).value();
 
@@ -4913,11 +4913,11 @@ fn building_element_from_input(
 
 fn set_up_energy_supply_unmet_demand_zones(
     unmet_demand_supply: Arc<RwLock<EnergySupply>>,
-    zones: &ZoneDictionary,
+    zones: &[ArcStr],
 ) -> IndexMap<ArcStr, Arc<EnergySupplyConnection>> {
     let mut energy_supplies: IndexMap<ArcStr, Arc<EnergySupplyConnection>> = Default::default();
 
-    for name in zones.keys() {
+    for name in zones {
         energy_supplies.insert(
             name.into(),
             Arc::new(EnergySupply::connection(unmet_demand_supply.clone(), name.as_str()).unwrap()),
