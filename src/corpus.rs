@@ -9,8 +9,8 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInfo,
-    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyExportTariff,
+    EnergySupplyTariffInfo, ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
@@ -4011,11 +4011,23 @@ fn energy_supply_from_input(
             });
         }
 
-        if let Some(_tariff_export) = input.tariff_export.as_ref() {
-            // builder = builder.with_export_tariff();
-            // TODO 1.0.0a9 migration
+        if let Some(tariff_export) = input.tariff_export.as_ref() {
+            builder = builder.with_export_tariff(EnergySupplyExportTariff {
+                tariff_export: tariff_export.clone(),
+                threshold_charges_export: input
+                    .threshold_charges_export
+                    .map(|threshold_charges_export| threshold_charges_export.to_vec()),
+                threshold_prices_export: input
+                    .threshold_prices_export
+                    .map(|threshold_prices_export| threshold_prices_export.to_vec()),
+            });
         }
-        // TODO 1.0.0a9 migration - power limit fields
+        if let Some(power_limit_export) = input.power_limit_export.as_ref() {
+            builder = builder.with_power_limit_export(*power_limit_export);
+        }
+        if let Some(power_limit_battery_import) = input.power_limit_battery_import.as_ref() {
+            builder = builder.with_power_limit_battery_import(*power_limit_battery_import);
+        }
 
         builder.build()
     })))
