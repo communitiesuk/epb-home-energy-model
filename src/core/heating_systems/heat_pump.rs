@@ -7717,7 +7717,7 @@ mod tests {
             heat_source_wet: "hp".into(),
             combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
             separate_dhw_tests: BoilerHotWaterTest::ML,
-            rejected_energy_1: Some(0.0004),
+            rejected_energy_1: 0.0004,
             storage_loss_factor_1: None,
             storage_loss_factor_2: Some(0.91574),
             rejected_factor_3: Some(0.),

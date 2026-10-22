@@ -175,10 +175,6 @@ impl BoilerServiceWaterCombi {
                 combi_type_specific_details,
                 ..
             } => {
-                // TODO temporary fix to match Python.
-                // rejected_energy_1 is not required by the schema but is required here
-                let rejected_energy_1 = rejected_energy_1.unwrap();
-
                 let combi_boiler_config = match combi_type_specific_details {
                     CombiTypeSpecificDetails::KeepHot {
                         combi_keep_hot_fuel,
@@ -219,11 +215,13 @@ impl BoilerServiceWaterCombi {
                 ) = match separate_dhw_tests {
                     BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
                         // tapping cycle M and S, or M and L
-                        // TODO temporary fix to match Python.
-                        // rejected_factor_3 is not required by the schema but is required here
-                        // storage_loss_factor_2 is not required by the schema but is required here
-                        let rejected_factor_3 = rejected_factor_3.unwrap();
-                        let storage_loss_factor_2 = storage_loss_factor_2.unwrap();
+                        // rejected_factor_3 is validated at input time to be present for M&L or M&L
+                        // likewise storage_loss_factor_2
+                        // hence we can use expect here (though finer-grained typing would be preferable)
+                        let rejected_factor_3 = rejected_factor_3
+                            .expect("rejected_factor_3 must be present for M&S or M&L");
+                        let storage_loss_factor_2 = storage_loss_factor_2
+                            .expect("storage_loss_factor_2 must be present for M&S or M&L");
 
                         // create adjusted loss factors for use with instantaneous type combis.
                         // currently we can do this just once, during boiler init.
@@ -1964,7 +1962,7 @@ mod tests {
                 combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // fuel_energy_1 doesn't exist, seems to have been added by mistake in the Python test fixture
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
@@ -2101,7 +2099,7 @@ mod tests {
             let boiler_data = HotWaterSourceDetails::CombiBoiler {
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1 field added here in Python seems to be a mistake
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2 field added here in Python seems to be a mistake
                 // rejected_energy_2 field added here in Python seems to be a mistake
@@ -2149,7 +2147,7 @@ mod tests {
             let boiler_data = HotWaterSourceDetails::CombiBoiler {
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1 field added here in Python seems to be a mistake
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.),
                 // fuel_energy_2 field added here in Python seems to be a mistake
                 // rejected_energy_2 field added here in Python seems to be a mistake
@@ -2194,7 +2192,7 @@ mod tests {
                 combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
@@ -2231,7 +2229,7 @@ mod tests {
                 combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
@@ -2268,7 +2266,7 @@ mod tests {
                 combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                 separate_dhw_tests: BoilerHotWaterTest::MOnly,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
@@ -2408,7 +2406,7 @@ mod tests {
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1: 7.099, // field does not exist - seems to be a mistake in the test data
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // field does not exist - seems to be a mistake in the test data
                 // rejected_energy_2: 0.0008 // field does not exist - seems to be a mistake in the test data
@@ -2454,7 +2452,7 @@ mod tests {
                     control_keep_hot: Default::default(),
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
@@ -2497,7 +2495,7 @@ mod tests {
                     control_keep_hot: Default::default(),
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_2: Some(1.24),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 87.,
@@ -2563,7 +2561,7 @@ mod tests {
                     control_keep_hot: Default::default(),
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
@@ -2633,7 +2631,7 @@ mod tests {
                     control_keep_hot: Default::default(),
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
@@ -2703,7 +2701,7 @@ mod tests {
                     control_keep_hot: Some("keep_hot_control".into()),
                 },
                 separate_dhw_tests: BoilerHotWaterTest::MS,
-                rejected_energy_1: Some(0.0004),
+                rejected_energy_1: 0.0004,
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,

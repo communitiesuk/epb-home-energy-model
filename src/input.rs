@@ -2390,8 +2390,9 @@ pub enum HotWaterSourceDetails {
         separate_dhw_tests: BoilerHotWaterTest,
 
         /// Rejected energy factor 1 for combi boiler efficiency calculations (unit: kWh)
+        /// NB. Python input.py lists this as optional, but there is no CombiBoiler variant that does not require it, so marking as required here
         #[validate(minimum = 0.)]
-        rejected_energy_1: Option<f64>,
+        rejected_energy_1: f64,
 
         /// Storage loss factor 1 for combi boiler efficiency calculations (unit: kWh/day)
         #[validate(minimum = 0.)]
@@ -2504,39 +2505,29 @@ impl From<PreHeatedWaterSourceDetails> for HotWaterSourceDetails {
 fn validate_dhw_tests_inputs(
     hw_source_details: &HotWaterSourceDetails,
 ) -> Result<(), serde_valid::validation::Error> {
-    let (
-        separate_dhw_tests,
-        rejected_energy_1,
-        rejected_factor_3,
-        storage_loss_factor_1,
-        storage_loss_factor_2,
-    ) = if let HotWaterSourceDetails::CombiBoiler {
-        separate_dhw_tests,
-        rejected_energy_1,
-        rejected_factor_3,
-        storage_loss_factor_1,
-        storage_loss_factor_2,
-        ..
-    } = hw_source_details
-    {
-        (
+    let (separate_dhw_tests, rejected_factor_3, storage_loss_factor_1, storage_loss_factor_2) =
+        if let HotWaterSourceDetails::CombiBoiler {
             separate_dhw_tests,
-            rejected_energy_1,
             rejected_factor_3,
             storage_loss_factor_1,
             storage_loss_factor_2,
-        )
-    } else {
-        return Ok(());
-    };
+            ..
+        } = hw_source_details
+        {
+            (
+                separate_dhw_tests,
+                rejected_factor_3,
+                storage_loss_factor_1,
+                storage_loss_factor_2,
+            )
+        } else {
+            return Ok(());
+        };
     if matches!(
         separate_dhw_tests,
         BoilerHotWaterTest::ML | BoilerHotWaterTest::MS
     ) {
-        if rejected_energy_1.is_none()
-            || rejected_factor_3.is_none()
-            || storage_loss_factor_2.is_none()
-        {
+        if rejected_factor_3.is_none() || storage_loss_factor_2.is_none() {
             return custom_validation_error("Loss factors r1, F2, and F3 are required when a combi boiler is tested to two profiles.");
         } else if storage_loss_factor_1.is_some() {
             return custom_validation_error(
@@ -2547,7 +2538,7 @@ fn validate_dhw_tests_inputs(
         separate_dhw_tests,
         BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests
     ) {
-        if rejected_energy_1.is_none() || storage_loss_factor_1.is_none() {
+        if storage_loss_factor_1.is_none() {
             return custom_validation_error(
                 "Loss factors r1, and F1, are required when a combi boiler is tested to profile M, or not tested."
             );
@@ -8186,7 +8177,7 @@ mod tests {
                     heat_source_wet: "heat source wet".into(),
                     combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                     separate_dhw_tests: BoilerHotWaterTest::MOnly,
-                    rejected_energy_1: Some(0.005),
+                    rejected_energy_1: 0.005,
                     storage_loss_factor_1: Some(1.88),
                     storage_loss_factor_2: None,
                     rejected_factor_3: None,
