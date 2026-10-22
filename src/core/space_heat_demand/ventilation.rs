@@ -3177,7 +3177,6 @@ impl InfiltrationVentilation {
                 } else {
                     None
                 };
-            // TODO as part of 1.0.0a9 migration Positive Input Ventilation support
             mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
                 mech_vents_data.supply_air_flow_rate_control,
                 mech_vents_data.supply_air_temperature_control_type,
@@ -3210,7 +3209,6 @@ impl InfiltrationVentilation {
                 } else {
                     None
                 },
-                // We have validation logic that suggests this could be optional? As part of 1.0.0a9 migration
                 Some(ventilation_zone_height),
             )?));
         }
@@ -4084,7 +4082,6 @@ mod tests {
                 ("_window_opening_closedsleeping".into(), control2),
             ]),
         );
-        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         let infiltration_ventilation = InfiltrationVentilation::create(
             &infiltration_ventilation_input,
             &zone_input,
@@ -4145,7 +4142,6 @@ mod tests {
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
 
-        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         let infiltration_ventilation = InfiltrationVentilation::create(
             &infiltration_ventilation_input,
             &zone_input_copy,
@@ -4177,7 +4173,6 @@ mod tests {
         .build();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         let infiltration_ventilation = InfiltrationVentilation::create(
             &infiltration_ventilation_input,
             &zone_input_copy,
@@ -5579,7 +5574,6 @@ mod tests {
             )
             .unwrap();
             let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
-            // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
             InfiltrationVentilation::new(
                 true,
                 VentilationShieldClass::Open,
@@ -6224,7 +6218,6 @@ mod tests {
             )
             .unwrap();
             let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
-            // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
             InfiltrationVentilation::new(
                 true,
                 VentilationShieldClass::Open,

@@ -4388,7 +4388,6 @@ mod tests {
             area_per_perimeter_vent: 1.,
             shield_fact_location: wind_shield_location.into(),
             thermal_resistance_of_insulation: 1.,
-            // ADDED to compile during 1.0.0a9 migration
             control_smart_air_brick: None,
             vents_open_during_airtightness_test: None,
         }

@@ -1261,9 +1261,6 @@ fn validate_threshold_value_fractions(
     Ok(())
 }
 
-// This needs looking at as part of the 1.0.0a9 migration, python check is more comprehensive
-// and may include additional validation logic that is unecessary due to our typesystem.
-// Either priority needs loosening or we are just checking 2 things and this can be simplified
 pub(crate) fn validate_priority_for_energy_supply(
     energy_supply: &EnergySupplyDetails,
 ) -> Result<(), serde_valid::validation::Error> {

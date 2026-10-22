@@ -164,12 +164,21 @@ impl HeatSourceWet {
                 ignore_standard_ctrl,
                 &simtime,
             ),
-            HeatSourceWet::HeatBatteryHotWater(battery) => {
-                battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
-            }
-            HeatSourceWet::HeatPumpWater(water) => {
-                water.demand_energy(energy_demand, temp_flow, temperature, simtime, None)
-            }
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.demand_energy(
+                energy_demand,
+                temp_flow,
+                temperature,
+                None,
+                ignore_standard_ctrl,
+                simtime,
+            ),
+            HeatSourceWet::HeatPumpWater(water) => water.demand_energy(
+                energy_demand,
+                temp_flow,
+                temperature,
+                simtime,
+                ignore_standard_ctrl,
+            ),
             HeatSourceWet::HeatPumpWaterOnly(water_only) => Ok(water_only.demand_energy(
                 energy_demand,
                 Default::default(),
@@ -225,6 +234,7 @@ impl HeatBatteryWaterService {
         temp_flow: Option<f64>,
         temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -234,7 +244,7 @@ impl HeatBatteryWaterService {
                 temp_return,
                 update_heat_source_state,
                 simtime,
-                false,
+                ignore_standard_ctrl.unwrap_or(false),
             ),
             HeatBatteryWaterService::DryCore(service) => service.demand_energy(
                 energy_demand,
@@ -242,7 +252,7 @@ impl HeatBatteryWaterService {
                 temp_return.ok_or_else(|| anyhow!("Water service for drycore heat battery expected a temp_return value to be provided"))?,
                 update_heat_source_state,
                 simtime,
-                None, // place holder as part of 1.0.0a9 migration
+                ignore_standard_ctrl,
             ),
         }
     }

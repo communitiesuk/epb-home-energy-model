@@ -2193,7 +2193,6 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered.into(),
             thermal_resistance_of_insulation: 7.,
-            // ADDED to compile during 1.0.0a9 migration
             control_smart_air_brick: None,
             vents_open_during_airtightness_test: None,
         };
@@ -2212,7 +2211,6 @@ mod tests {
                 0.7,
                 external_conditions.clone(),
                 WindShieldLocation::Average,
-                // Temporarily none as part of migration to 1.0.0a9
                 None,
                 &simulation_time.iter(),
             )
@@ -2316,7 +2314,6 @@ mod tests {
             env_area: 220.,
             altitude: 30.,
         };
-        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         InfiltrationVentilation::new(
             true,
             VentilationShieldClass::Normal,

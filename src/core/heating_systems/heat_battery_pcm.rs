@@ -2594,8 +2594,8 @@ impl HeatBatteryPcm {
                 Some(pwr_in),
                 None,
                 0.,
-                None, // Todo - temp values as part of 1.0.0a9
-                None, // Todo - temp values as part of 1.0.0a9
+                None,
+                None,
             )?;
 
             // RN for next time step
@@ -4027,7 +4027,6 @@ mod tests {
         let temp_flow = 50.0;
         let temp_return = 40.0;
         let result = heat_battery_service
-            // added false to match signature not yet ported for 1.0.0a9
             .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
             .unwrap();
 
@@ -7857,7 +7856,7 @@ mod tests {
             }
 
             #[rstest]
-            #[ignore = "todo when warning is implemented 1.0.0a9"]
+            #[ignore = "todo when warning is implemented"]
             fn test_warning_when_schedule_exceeds_flow_temp(simulation_time: SimulationTime) {
                 // Schedule with upper setpoint (70°C) above temp_flow_max (65°C)
                 let source = make_heat_source_wet_source(
@@ -7871,7 +7870,7 @@ mod tests {
             }
 
             #[rstest]
-            #[ignore = "todo when warning is implemented 1.0.0a9"]
+            #[ignore = "todo when warning is implemented"]
             fn test_warning_when_lower_schedule_exceeds_flow_temp(simulation_time: SimulationTime) {
                 // Both setpoints exceed the limit; the maximum offending value is 75°C.
                 let source = make_heat_source_wet_source(

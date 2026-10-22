@@ -506,7 +506,6 @@ fn single_control_from_details(
             )?;
             Control::RangeTime(range_time_control.into()).into()
         }
-        // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
         ControlDetails::ChargeTarget {
             charge_level: charge_level_input,
             external_sensor,
@@ -737,7 +736,6 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         &simtime.iter(),
         &obscure_error_reporter,
     )?;
-    // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
         input.infiltration_ventilation(),
         input.zone(),
