@@ -34,6 +34,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
@@ -2246,6 +2247,8 @@ impl InfiltrationVentilation {
         r_w_arg: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> Result<f64, InternalReferencePressureCalculationError> {
+        let mut last_error: Option<Cow<'static, str>> = None;
+
         for interval_expansion in INTERVAL_EXPANSION_LIST {
             let bracket = (
                 initial_p_z_ref_guess - interval_expansion,
@@ -2264,9 +2267,14 @@ impl InfiltrationVentilation {
                 bracket,
             );
 
-            if let Ok(root) = result {
-                let p_z_ref = root;
-                return Ok(p_z_ref);
+            match result {
+                Ok(root) => {
+                    let p_z_ref = root;
+                    return Ok(p_z_ref);
+                }
+                Err(e) => {
+                    last_error.replace(e.into());
+                }
             }
         }
 
@@ -2274,6 +2282,8 @@ impl InfiltrationVentilation {
             initial_p_z_ref_guess,
             temp_interior_air,
             r_w_arg,
+            reported_error: last_error
+                .unwrap_or("No solution found over interval expansion".into()),
         })
     }
 
@@ -3298,7 +3308,7 @@ fn root_scalar_for_implicit_mass_balance(
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
     bracket: (f64, f64),
-) -> Result<f64, &'static str> {
+) -> Result<f64, Cow<'static, str>> {
     let problem = ImplicitMassBalanceProblem {
         wind_speed,
         wind_direction,
@@ -3320,12 +3330,12 @@ fn root_scalar_for_implicit_mass_balance(
 
     let best_p_z_ref = match res {
         Ok(res) => res.state().best_param,
-        Err(_) => return Err("Error calculating root for implicit mass balance"),
+        Err(e) => return Err(e.to_string().into()),
     };
 
     match best_p_z_ref {
         Some(p_z_ref) => Ok(p_z_ref),
-        None => Err("No best_param in result"),
+        None => Err("No best_param in result".into()),
     }
 }
 
@@ -3417,12 +3427,13 @@ impl From<VentilationDetailedResult> for Vec<StringOrNumber> {
 }
 
 #[derive(Debug, Error)]
-#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_interior_air: {temp_interior_air}, r_w_arg: {r_w_arg:?}"
+#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_interior_air: {temp_interior_air}, r_w_arg: {r_w_arg:?}. Reported error: {reported_error}."
 )]
 pub struct InternalReferencePressureCalculationError {
     initial_p_z_ref_guess: f64,
     temp_interior_air: f64,
     r_w_arg: Option<f64>,
+    reported_error: Cow<'static, str>,
 }
 
 #[cfg(test)]
