@@ -116,7 +116,8 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             }
             let difference_kind = DifferenceKind::Full;
             // use a slightly looser threshold for ventilation files, as they tend to be a little looser, but are also not core outputs
-            let float_threshold = (file_name.contains("core__ventilation_results.csv")).then_some(compare::FLOAT_THRESHOLD * 10.);
+            // also be looser with heat balance files for demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json as per e2e config of upstream python
+            let float_threshold = (file_name.contains("core__ventilation_results.csv") || file_name.contains("demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry__core__results_heat_balance_")).then_some(compare::FLOAT_THRESHOLD * 10.);
             field_count += if is_tabular(file_name) {
                 let (file_differences, file_field_count) = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind, float_threshold);
                 if let Err(comparison_error) = file_differences {
