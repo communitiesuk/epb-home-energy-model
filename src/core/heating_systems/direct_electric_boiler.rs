@@ -12,7 +12,6 @@ use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use arcstr::ArcStr;
-use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -215,7 +214,7 @@ impl DirectElectricBoiler {
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
-        combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        combi_loss: Option<f64>,
         keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
@@ -231,7 +230,7 @@ impl DirectElectricBoiler {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
-        let combi_loss = combi_loss.unwrap_or(Arc::new(RwLock::new(AtomicF64::new(0.0))));
+        let combi_loss = combi_loss.unwrap_or(0.0);
         let keep_hot_on = keep_hot_on.unwrap_or(true);
 
         let time_available = self.time_available(time_start, time_elapsed_hp);
@@ -250,7 +249,7 @@ impl DirectElectricBoiler {
         let (combi_boiler_config, combi_loss) = if let ServiceType::WaterCombi = service_type {
             (combi_boiler_config, combi_loss)
         } else {
-            (None, Arc::new(RwLock::new(AtomicF64::new(0.))))
+            (None, 0.)
         };
 
         if update_heat_source_state {
@@ -615,7 +614,7 @@ mod tests {
                     None,
                     None,
                     None,
-                    Some(Arc::new(RwLock::new(1.2.into()))),
+                    Some(1.2),
                     None,
                     Some(CombiBoilerConfig::KeepHot {
                         keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,

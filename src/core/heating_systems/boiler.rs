@@ -55,7 +55,7 @@ impl BoilerForBoilerService {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
-        combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        combi_loss: Option<f64>,
         keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
@@ -107,7 +107,7 @@ impl BoilerForBoilerService {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BoilerServiceWaterCombi {
     boiler: BoilerForBoilerService,
     service_name: ArcStr,
@@ -122,7 +122,7 @@ pub struct BoilerServiceWaterCombi {
     rejected_factor_3: Option<f64>,
     daily_hot_water_usage: f64,
     simulation_timestep: f64,
-    combi_loss: Arc<RwLock<AtomicF64>>,
+    combi_loss: AtomicF64,
     combi_boiler_config: CombiBoilerConfig,
 }
 
@@ -309,7 +309,7 @@ impl BoilerServiceWaterCombi {
                     daily_hot_water_usage,
                     cold_feed,
                     simulation_timestep,
-                    combi_loss: Arc::new(RwLock::new(Default::default())),
+                    combi_loss: Default::default(),
                     combi_boiler_config,
                 })
             }
@@ -362,7 +362,7 @@ impl BoilerServiceWaterCombi {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.;
-        self.combi_loss.read().store(0., Ordering::SeqCst);
+        self.combi_loss.store(0., Ordering::SeqCst);
 
         // storage combi boilers where the store is less than 55 litres
         // and the store losses are included in test results can be
@@ -439,9 +439,7 @@ impl BoilerServiceWaterCombi {
                         event.event_result_type,
                     );
                     energy_demand += combi_loss;
-                    self.combi_loss
-                        .read()
-                        .fetch_add(combi_loss, Ordering::SeqCst);
+                    self.combi_loss.fetch_add(combi_loss, Ordering::SeqCst);
                 }
             }
         }
@@ -453,9 +451,7 @@ impl BoilerServiceWaterCombi {
             // combis with an active keep-hot facility have loss per timestep
             let combi_loss = self.boiler_combi_loss_storage(self.simulation_timestep)?;
             energy_demand += combi_loss;
-            self.combi_loss
-                .read()
-                .fetch_add(combi_loss, Ordering::SeqCst);
+            self.combi_loss.fetch_add(combi_loss, Ordering::SeqCst);
         }
 
         self.boiler
@@ -469,7 +465,7 @@ impl BoilerServiceWaterCombi {
                 None,
                 None,
                 None,
-                self.combi_loss.clone().into(),
+                self.combi_loss.load(Ordering::SeqCst).into(),
                 keep_hot_on.into(),
                 Some(self.combi_boiler_config.clone()),
             )
@@ -533,13 +529,11 @@ impl BoilerServiceWaterCombi {
 
     pub(crate) fn internal_gains(&self) -> f64 {
         let gain_internal = FRAC_DHW_ENERGY_INTERNAL_GAINS
-            * self.combi_loss.read().load(Ordering::SeqCst)
+            * self.combi_loss.load(Ordering::SeqCst)
             * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep;
 
-        self.combi_loss
-            .read()
-            .store(Default::default(), Ordering::SeqCst);
+        self.combi_loss.store(Default::default(), Ordering::SeqCst);
 
         gain_internal
     }
@@ -1119,8 +1113,7 @@ impl Boiler {
         {
             let mut boiler = boiler.write();
             let keep_hot_connection =
-                EnergySupply::connection((*boiler).energy_supply_aux.clone(), service_name)?
-                    .clone();
+                EnergySupply::connection(boiler.energy_supply_aux.clone(), service_name)?.clone();
             boiler
                 .energy_supply_conn_keephot
                 .replace(keep_hot_connection);
@@ -1439,14 +1432,14 @@ impl Boiler {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
-        combi_loss: Option<Arc<RwLock<AtomicF64>>>,
+        combi_loss: Option<f64>,
         keep_hot_on: Option<bool>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
-        let combi_loss = combi_loss.unwrap_or(Arc::new(RwLock::new(AtomicF64::new(0.0))));
+        let combi_loss = combi_loss.unwrap_or(0.0);
         let keep_hot_on = keep_hot_on.unwrap_or(true);
 
         // Account for time control where present. If no control present, assume
@@ -1487,7 +1480,7 @@ impl Boiler {
             let (combi_boiler_config, combi_loss) = if let ServiceType::WaterCombi = service_type {
                 (combi_boiler_config, combi_loss)
             } else {
-                (None, Arc::new(RwLock::new(AtomicF64::new(0.))))
+                (None, 0.)
             };
 
             // Save results that are needed later (in the timestep_end function)
@@ -1544,7 +1537,7 @@ impl Boiler {
             let (combi_boiler_config, combi_loss, keep_hot_on) = match service_type {
                 ServiceType::WaterCombi => (
                     service_data.combi_boiler_config.as_ref(),
-                    service_data.combi_loss.read().load(Ordering::SeqCst),
+                    service_data.combi_loss,
                     if matches!(
                         service_data.combi_boiler_config,
                         Some(CombiBoilerConfig::KeepHot { .. })
@@ -1832,7 +1825,7 @@ pub(crate) struct ServiceResult {
     pub(crate) time_available: f64,
     pub(crate) _time_start: f64,
     pub(crate) _time_elapsed_hp: Option<f64>,
-    pub(crate) combi_loss: Arc<RwLock<AtomicF64>>,
+    pub(crate) combi_loss: f64,
     pub(crate) keep_hot_on: bool,
     pub(crate) combi_boiler_config: Option<CombiBoilerConfig>,
 }
@@ -2793,7 +2786,7 @@ mod tests {
 
         #[rstest]
         fn test_internal_gains(mut boiler_service: BoilerServiceWaterCombi) {
-            boiler_service.combi_loss = Arc::new(RwLock::new(10.0.into()));
+            boiler_service.combi_loss = 10.0.into();
             assert_eq!(boiler_service.internal_gains(), 2500.);
         }
 
