@@ -1245,10 +1245,16 @@ impl Boiler {
         )
     }
 
-    fn calc_current_boiler_power(&self, energy_output_provided: f64, time_available: f64) -> f64 {
-        if time_available <= 0. {
-            return 0.0;
-        }
+    fn calc_current_boiler_power(
+        &self,
+        energy_output_provided: f64,
+        time_available: Option<f64>,
+    ) -> f64 {
+        let time_available = match time_available {
+            None => return 0.0,
+            Some(time_available) if time_available <= 0. => return 0.0,
+            Some(time_available) => time_available,
+        };
 
         let min_power = self.boiler_power * self.min_modulation_load;
 
@@ -1291,7 +1297,7 @@ impl Boiler {
             self.calc_energy_output_provided(energy_output_required, time_available);
 
         let current_boiler_power =
-            self.calc_current_boiler_power(energy_output_provided, time_available);
+            self.calc_current_boiler_power(energy_output_provided, time_available.into());
 
         // The efficiency of the boiler depends on whether it cycles on/off.
         // If this occurs, an adjustment is calculated for the calculation
@@ -1410,13 +1416,15 @@ impl Boiler {
     }
 
     /// Calculate running time of Boiler
-    fn time_running(&self, energy_output_provided: f64, time_available: f64) -> f64 {
+    fn time_running(&self, energy_output_provided: f64, time_available: Option<f64>) -> f64 {
         let current_boiler_power =
             self.calc_current_boiler_power(energy_output_provided, time_available);
         if current_boiler_power <= 0.0 {
             0.0
         } else {
-            time_available.min(energy_output_provided / current_boiler_power)
+            time_available
+                .unwrap_or(0.)
+                .min(energy_output_provided / current_boiler_power)
         }
     }
 
@@ -1456,7 +1464,7 @@ impl Boiler {
         //      Therefore, the value for time running returned from this function
         //      (used in the hybrid HP calculation) will be slightly inaccurate.
         let time_running_current_service =
-            self.time_running(energy_output_provided, time_available);
+            self.time_running(energy_output_provided, time_available.into());
 
         if update_heat_source_state {
             self.total_time_running_current_timestep
@@ -1697,7 +1705,7 @@ impl Boiler {
             .read()
             .iter()
             .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
-            .sum::<f64>();
+            .max_by(|a, b| a.total_cmp(b));
 
         for service_data in self.service_results.read().iter() {
             // Aggregate space heating services
@@ -1723,7 +1731,7 @@ impl Boiler {
                 } else {
                     (
                         service_data.energy_output_provided,
-                        service_data.time_available,
+                        service_data.time_available.into(),
                     )
                 };
 
@@ -3834,9 +3842,9 @@ mod tests {
         fn test_calc_current_boiler_power(
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
-            assert_eq!(boiler.calc_current_boiler_power(10., 0.), 0.0);
+            assert_eq!(boiler.calc_current_boiler_power(10., Some(0.)), 0.0);
             assert_relative_eq!(
-                boiler.calc_current_boiler_power(10., 3.),
+                boiler.calc_current_boiler_power(10., Some(3.)),
                 4.800000000000001,
                 max_relative = 1e-7
             );
