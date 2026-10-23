@@ -136,7 +136,7 @@ impl HeatSourceWet {
             HeatSourceWet::WaterRegular(regular) => regular
                 .demand_energy(
                     energy_demand,
-                    Default::default(),
+                    temp_flow,
                     temperature,
                     None,
                     None,
@@ -148,7 +148,11 @@ impl HeatSourceWet {
             HeatSourceWet::Space(space) => space
                 .demand_energy(
                     energy_demand,
-                    Default::default(),
+                    temp_flow.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "A boiler service for space heating requires temp_flow to be set"
+                        )
+                    })?,
                     temperature,
                     None,
                     None,

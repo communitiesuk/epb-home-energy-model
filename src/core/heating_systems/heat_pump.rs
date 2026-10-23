@@ -3578,9 +3578,10 @@ impl HeatPump {
                 HybridBoilerService::Regular(boiler_regular) => {
                     boiler_regular.lock().demand_energy(
                         service_results.energy_output_required_boiler,
-                        kelvin_to_celsius(
-                            temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
-                        )?,
+                        match temp_output {
+                            Some(temp_output) => Some(kelvin_to_celsius(temp_output)?),
+                            None => None,
+                        },
                         temp_return_feed.map(kelvin_to_celsius).transpose()?,
                         Some(is_hybrid_service),
                         time_elapsed_hp,

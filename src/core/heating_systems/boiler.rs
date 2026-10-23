@@ -49,7 +49,7 @@ impl BoilerForBoilerService {
         service_name: &str,
         service_type: ServiceType,
         energy_output_required: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         temp_return_feed: Option<f64>,
         time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
@@ -459,7 +459,7 @@ impl BoilerServiceWaterCombi {
                 &self.service_name,
                 ServiceType::WaterCombi,
                 energy_demand,
-                self.temperature_hot_water_in_c,
+                self.temperature_hot_water_in_c.into(),
                 Some(self.temperature_hot_water_in_c),
                 None,
                 None,
@@ -589,7 +589,7 @@ impl BoilerServiceWaterRegular {
     pub fn demand_energy(
         &self,
         mut energy_demand: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         temp_return: Option<f64>,
         hybrid_service: Option<bool>,
         time_elapsed_hp: Option<f64>,
@@ -712,7 +712,7 @@ impl BoilerServiceSpace {
             &self.service_name,
             ServiceType::Space,
             energy_demand,
-            temp_flow,
+            temp_flow.into(),
             temp_return,
             Some(time_start),
             Some(hybrid_service_bool),
@@ -1426,7 +1426,7 @@ impl Boiler {
         service_name: &str,
         service_type: ServiceType,
         energy_output_required: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         temp_return_feed: Option<f64>,
         time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
@@ -1590,7 +1590,9 @@ impl Boiler {
             let fuel_demand = if let Some(temp_return_feed) = temp_return_feed {
                 let blr_eff_final = self.calc_boiler_eff_internal(
                     service_type == ServiceType::WaterCombi,
-                    temp_flow,
+                    temp_flow.ok_or_else(|| {
+                        anyhow!("temp_flow was expected to be present when calculating fuel demand")
+                    })?,
                     temp_return_feed,
                     combined_energy_output_required,
                     time_available,
@@ -1818,7 +1820,7 @@ pub(crate) struct PilotLightConfig {
 pub(crate) struct ServiceResult {
     pub(crate) service_name: ArcStr,
     pub(crate) service_type: ServiceType,
-    pub(crate) temp_flow: f64,
+    pub(crate) temp_flow: Option<f64>,
     pub(crate) temp_return_feed: Option<f64>,
     pub(crate) energy_output_required: f64,
     pub(crate) energy_output_provided: f64,
@@ -3017,7 +3019,7 @@ mod tests {
                     boiler_service
                         .demand_energy(
                             energy_output_required[idx],
-                            temp_flow[idx],
+                            temp_flow[idx].into(),
                             Some(temp_return_feed[idx]),
                             None,
                             None,
@@ -3056,7 +3058,7 @@ mod tests {
                 boiler_service
                     .demand_energy(
                         100.,
-                        20.,
+                        Some(20.),
                         Some(20.),
                         None,
                         None,
@@ -3078,7 +3080,7 @@ mod tests {
             assert!(boiler_service
                 .demand_energy(
                     100.,
-                    20.,
+                    Some(20.),
                     None,
                     None,
                     None,
@@ -3103,7 +3105,7 @@ mod tests {
                 boiler_service
                     .demand_energy(
                         100.,
-                        20.,
+                        Some(20.),
                         Some(20.),
                         None,
                         None,
@@ -3143,7 +3145,7 @@ mod tests {
             let energy_delivered = boiler_service
                 .demand_energy(
                     1.0e6,
-                    55.,
+                    Some(55.),
                     Some(30.),
                     None,
                     None,
@@ -3202,7 +3204,7 @@ mod tests {
                 boiler_service
                     .demand_energy(
                         100.,
-                        20.,
+                        Some(20.),
                         Some(20.),
                         None,
                         None,
@@ -3993,7 +3995,7 @@ mod tests {
                             "boiler_demand_energy",
                             ServiceType::WaterCombi,
                             10.,
-                            45.,
+                            Some(45.),
                             Some(37.),
                             None,
                             Some(false),
@@ -4020,7 +4022,7 @@ mod tests {
                             "boiler_demand_energy_with_hybrid",
                             ServiceType::Space,
                             100.,
-                            45.,
+                            Some(45.),
                             Some(37.),
                             None,
                             Some(true),
@@ -4047,7 +4049,7 @@ mod tests {
                             "boiler_demand_energy_hybrid_time_elapsed",
                             ServiceType::Space,
                             100.,
-                            45.,
+                            Some(45.),
                             Some(37.),
                             None,
                             Some(true),
@@ -4133,7 +4135,7 @@ mod tests {
                     "boiler_demand_energy",
                     ServiceType::WaterCombi,
                     10.,
-                    65.,
+                    Some(65.),
                     Some(60.),
                     None,
                     Some(false),
