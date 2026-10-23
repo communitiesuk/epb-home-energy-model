@@ -758,7 +758,7 @@ pub struct Boiler {
     energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     _energy_supply_type: ArcStr,
-    // service_results: (),
+    energy_supply_aux: Arc<RwLock<EnergySupply>>,
     boiler_location: HeatSourceLocation,
     min_modulation_load: f64,
     boiler_power: f64,
@@ -809,7 +809,7 @@ impl Boiler {
         }
 
         let energy_supply_conn_aux = EnergySupply::connection(
-            energy_supply_aux,
+            energy_supply_aux.clone(),
             format!("Boiler_auxiliary: {name}").as_str(),
         )?;
 
@@ -917,6 +917,7 @@ impl Boiler {
                     energy_supply_connections: Default::default(),
                     simulation_timestep,
                     _energy_supply_type: energy_supply_type,
+                    energy_supply_aux,
                     boiler_location,
                     min_modulation_load,
                     boiler_power,
@@ -1101,7 +1102,7 @@ impl Boiler {
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
         keep_hot_control: Option<Arc<OnOffTimeControl>>,
-    ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
+    ) -> anyhow::Result<BoilerServiceWaterCombi> {
         boiler
             .write()
             .create_service_connection(service_name)
@@ -1117,10 +1118,15 @@ impl Boiler {
         } = boiler_data
         {
             let mut boiler = boiler.write();
-            boiler.energy_supply_conn_keephot = Some(boiler.energy_supply_connection_aux.clone());
+            let keep_hot_connection =
+                EnergySupply::connection((*boiler).energy_supply_aux.clone(), service_name)?
+                    .clone();
+            boiler
+                .energy_supply_conn_keephot
+                .replace(keep_hot_connection);
         }
 
-        BoilerServiceWaterCombi::new(
+        Ok(BoilerServiceWaterCombi::new(
             BoilerForBoilerService::Boiler(boiler.clone()),
             boiler_data,
             service_name.into(),
@@ -1128,7 +1134,7 @@ impl Boiler {
             cold_feed,
             keep_hot_control,
             boiler.read().simulation_timestep,
-        )
+        )?)
     }
 
     /// Return a BoilerServiceWaterRegular object and create an EnergySupplyConnection for it.
