@@ -6893,8 +6893,8 @@ mod tests {
 
     #[fixture]
     fn baseline_demo_file_json() -> JsonValue {
-        let file = File::open("./examples/input/core/short/demo.json").unwrap();
-        serde_json::from_reader(file).unwrap()
+        let file = include_str!("../examples/input/core/short/demo.json");
+        serde_json::from_str(file).unwrap()
     }
 
     fn merge_json_onto_base(base: JsonValue, add: &JsonValue) -> JsonValue {
@@ -12022,8 +12022,8 @@ mod tests {
 
         #[fixture]
         fn two_heated_zones_input() -> JsonValue {
-            let file = File::open("./examples/input/core/short/demo_hp.json").unwrap();
-            serde_json::from_reader(file).unwrap()
+            let file = include_str!("../examples/input/core/short/demo_hp.json");
+            serde_json::from_str(file).unwrap()
         }
 
         #[rstest]
