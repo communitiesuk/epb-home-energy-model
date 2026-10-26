@@ -107,7 +107,6 @@ impl HeatSourceWet {
                 ))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                // passing default for _temp_return as it is unused
                 battery.energy_output_max(temp_flow, temp_return, simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
