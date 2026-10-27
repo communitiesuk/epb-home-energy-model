@@ -25,6 +25,8 @@ use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
+use accurate::sum::Sum2;
+use accurate::traits::SumWithAccumulator;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
@@ -705,12 +707,10 @@ impl Emitters {
 
         let func_temp_emitter_req = |temp_emitter: f64| {
             power_emitter_req
-                - FSum::with_all(
-                    c_n_pairs
-                        .iter()
-                        .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n)),
-                )
-                .value()
+                - c_n_pairs
+                    .iter()
+                    .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n))
+                    .sum_with_accumulator::<Sum2<_>>()
         };
 
         fsolve(func_temp_emitter_req, temp_rm + 10.)
