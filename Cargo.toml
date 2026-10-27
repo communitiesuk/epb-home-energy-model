@@ -8,6 +8,7 @@ license-file = "LICENSE.md"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
+accurate = "0.4.1"
 approx = "0.5.1"
 anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
@@ -40,16 +41,16 @@ parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde-aux = "4.7.0"
 serde-enum-str = "0.5.0"
+serde_fields = "0.1.1"
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_repr = "0.1.20"
 serde_with = { version = "3.21.0", features = ["json", "macros"] }
 serde_valid = "3.2.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
-serde-aux = "4.7.0"
-serde_fields = "0.1.1"
+tracing-subscriber = "0.3.23"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

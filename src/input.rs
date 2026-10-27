@@ -4189,7 +4189,6 @@ pub enum BuildingElement {
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_floor_construction: f64,
 
-        #[validate(exclusive_minimum = 0.)]
         /// Areal heat capacity of the ground floor element (unit: J/m2.K)
         #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,

@@ -18,13 +18,13 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -549,8 +549,14 @@ impl StorageTank {
             // Use ultimate cold water source temperature for consistent energy accounting
             let list_temp_vol =
                 cold_water_source.get_temp_cold_water(hot_volume, simulation_time)?;
-            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+            let sum_t_by_v = list_temp_vol
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_vol
+                .iter()
+                .map(|(_t, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
             let temp_cold = sum_t_by_v / sum_v;
 
             energy_withdrawn +=
@@ -580,8 +586,14 @@ impl StorageTank {
             // Get ultimate cold water temperature for energy calculation
             let list_temp_vol = cold_water_source
                 .get_temp_cold_water(remaining_demanded_volume, simulation_time)?;
-            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+            let sum_t_by_v = list_temp_vol
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_vol
+                .iter()
+                .map(|(_t, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
             let temp_cold = sum_t_by_v / sum_v;
 
             // Calculate volume-weighted temperature contribution from cold feed
@@ -598,7 +610,10 @@ impl StorageTank {
         }
 
         //  Calculate the remaining total volume
-        let remaining_total_volume: f64 = FSum::with_all(&remaining_vols).value();
+        let remaining_total_volume: f64 = remaining_vols
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
 
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
@@ -683,8 +698,14 @@ impl StorageTank {
                 let list_temp_vol = self
                     .cold_feed
                     .draw_off_water(needed_volume, simulation_time)?;
-                let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-                let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+                let sum_t_by_v = list_temp_vol
+                    .iter()
+                    .map(|(t, v)| t * v)
+                    .sum_with_accumulator::<Sum2<_>>();
+                let sum_v = list_temp_vol
+                    .iter()
+                    .map(|(_t, v)| *v)
+                    .sum_with_accumulator::<Sum2<_>>();
 
                 let temp_cold_feed = sum_t_by_v / sum_v;
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
@@ -722,15 +743,12 @@ impl StorageTank {
                     // mix temperatures of all applicable layers
                     // note error in formula 12 in standard as adding temperature to volume
                     // this is what I think they intended from the description (comment sic from Python code)
-                    let temp_mix = FSum::with_all(
-                        (0..self.vol_n.len())
-                            .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64),
-                    )
-                    .value()
-                        / FSum::with_all(
-                            (0..self.vol_n.len()).map(|l| self.vol_n[l] * mix_layer_n[l] as f64),
-                        )
-                        .value();
+                    let temp_mix = (0..self.vol_n.len())
+                        .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64)
+                        .sum_with_accumulator::<Sum2<_>>()
+                        / (0..self.vol_n.len())
+                            .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
+                            .sum_with_accumulator::<Sum2<_>>();
                     // set same temperature for all applicable layers
                     for j in 0..i + 2 {
                         if mix_layer_n[j] == 1 {
@@ -972,7 +990,9 @@ impl StorageTank {
 
         let q_s6 = self.rho
             * self.cp
-            * FSum::with_all((0..self.vol_n.len()).map(|i| self.vol_n[i] * temp_s6_n[i])).value();
+            * (0..self.vol_n.len())
+                .map(|i| self.vol_n[i] * temp_s6_n[i])
+                .sum_with_accumulator::<Sum2<_>>();
 
         (q_s6, temp_s6_n)
     }
@@ -1005,7 +1025,7 @@ impl StorageTank {
         q_ls_n_prev_heat_source: &[f64],
         temp_setpntmax: Option<f64>,
     ) -> (f64, f64, Vec<f64>, Vec<f64>) {
-        let q_x_in_adj: f64 = FSum::with_all(q_x_in_n).value();
+        let q_x_in_adj: f64 = q_x_in_n.iter().copied().sum_with_accumulator::<Sum2<_>>();
 
         // A layer is held at the setpoint by this source only if the source raised its
         // temperature this timestep. Energy enters at the heater layer and spreads upward by
@@ -1061,7 +1081,7 @@ impl StorageTank {
         }
 
         // total thermal losses kWh
-        let q_ls = FSum::with_all(&q_ls_n).value();
+        let q_ls = q_ls_n.iter().copied().sum_with_accumulator::<Sum2<_>>();
 
         self.storage_losses_kwh.store(q_ls, Ordering::SeqCst);
 
@@ -1569,8 +1589,14 @@ impl StorageTank {
                 let list_temp_vol = self
                     .cold_feed
                     .get_temp_cold_water(volume_extracted, simtime)?;
-                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                (list_temp_vol
+                    .iter()
+                    .map(|(t, v)| t * v)
+                    .sum_with_accumulator::<Sum2<_>>()
+                    / list_temp_vol
+                        .iter()
+                        .map(|(_, v)| *v)
+                        .sum_with_accumulator::<Sum2<_>>())
                 .into()
             };
 
@@ -1626,8 +1652,14 @@ impl StorageTank {
         let list_temp_vol = self
             .cold_feed
             .get_temp_cold_water(volume, simulation_time_iteration)?;
-        let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-        let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+        let sum_t_by_v = list_temp_vol
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>();
+        let sum_v = list_temp_vol
+            .iter()
+            .map(|(_t, v)| *v)
+            .sum_with_accumulator::<Sum2<_>>();
 
         self.temp_average_drawoff
             .store(sum_t_by_v / sum_v, Ordering::SeqCst);
@@ -1674,8 +1706,14 @@ impl StorageTank {
             let list_temp_vol = self
                 .cold_feed
                 .get_temp_cold_water(required_vol, simulation_time_iteration)?;
-            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+            let sum_t_by_v = list_temp_vol
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_vol
+                .iter()
+                .map(|(_t, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
             let temp_cold_water = sum_t_by_v / sum_v;
             //  Record the met volume demand for the current temperature target
             //  warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
@@ -1704,8 +1742,14 @@ impl StorageTank {
             let list_temp_vol = self
                 .cold_feed
                 .draw_off_water(remaining_demanded_volume, simulation_time_iteration)?;
-            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+            let sum_t_by_v = list_temp_vol
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_vol
+                .iter()
+                .map(|(_t, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
             let temp_cold_water = sum_t_by_v / sum_v;
 
             self.temp_average_drawoff_volweighted.fetch_add(
@@ -2487,8 +2531,14 @@ impl SmartHotWaterTank {
             .storage_tank
             .cold_feed
             .get_temp_cold_water(self.storage_tank.volume_total_in_litres, simtime)?;
-        let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-        let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
+        let sum_t_by_v = list_temp_vol
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>();
+        let sum_v = list_temp_vol
+            .iter()
+            .map(|(_t, v)| *v)
+            .sum_with_accumulator::<Sum2<_>>();
         let t_c = sum_t_by_v / sum_v;
         // TODO (from Python) Maybe use underlying cold feed?
 
@@ -2556,7 +2606,7 @@ impl SmartHotWaterTank {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<TemperatureCalculation> {
         let temp_setpntmax = self.temp_setpnt_max.setpnt(&simtime);
-        let energy_available = FSum::with_all(q_x_in_n.iter().copied()).value();
+        let energy_available = q_x_in_n.iter().copied().sum_with_accumulator::<Sum2<_>>();
 
         // Target state of charge for the heat source being considered
         let soc_max = if let Some(control_max_diverter) = control_max_diverter {
@@ -3036,14 +3086,16 @@ impl SmartHotWaterTank {
             // exclude the current layer, but as the initial value of the temperature
             // factor is zero, this makes no difference in practice
 
-            let numerator = FSum::with_all(
-                temp_s7_n
-                    .iter()
-                    .zip(temp_factors.iter())
-                    .map(|(&t, &f)| t * f),
-            )
-            .value()
-                - temp_target * FSum::with_all(temp_factors.iter().copied()).value();
+            let numerator = temp_s7_n
+                .iter()
+                .zip(temp_factors.iter())
+                .map(|(&t, &f)| t * f)
+                .sum_with_accumulator::<Sum2<_>>()
+                - temp_target
+                    * temp_factors
+                        .iter()
+                        .copied()
+                        .sum_with_accumulator::<Sum2<_>>();
             let denominator = temp_target - temp_s7_n[current_layer];
             temp_factors[current_layer] = if denominator < 0.
                 || relative_eq!(denominator, 0., max_relative = 1e-09, epsilon = 1e-10)
@@ -3065,16 +3117,14 @@ impl SmartHotWaterTank {
         }
 
         // Calculate volume to be pumped (only from layers below heater_layer)
-        let volume_pumped = FSum::with_all(
-            bottom_volumes
-                .iter()
-                .zip(temp_factors[..heater_layer].iter())
-                .map(|(&v, &f)| v * f),
-        )
-        .value();
+        let volume_pumped = bottom_volumes
+            .iter()
+            .zip(temp_factors[..heater_layer].iter())
+            .map(|(&v, &f)| v * f)
+            .sum_with_accumulator::<Sum2<_>>();
 
         // Check that the volume pumped doesn't exceed the volume of water up to the heater layer
-        if volume_pumped > FSum::with_all(bottom_volumes).value() {
+        if volume_pumped > bottom_volumes.into_iter().sum_with_accumulator::<Sum2<_>>() {
             bail!("Volume pumped is higher than total bottom volumes");
         }
 
@@ -3234,8 +3284,14 @@ impl SmartHotWaterTank {
                     .storage_tank
                     .cold_feed
                     .get_temp_cold_water(volume_extracted, simtime)?;
-                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                (list_temp_vol
+                    .iter()
+                    .map(|(t, v)| t * v)
+                    .sum_with_accumulator::<Sum2<_>>()
+                    / list_temp_vol
+                        .iter()
+                        .map(|(_, v)| *v)
+                        .sum_with_accumulator::<Sum2<_>>())
                 .into()
             };
 
