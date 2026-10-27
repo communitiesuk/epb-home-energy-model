@@ -49,7 +49,7 @@ use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
@@ -66,26 +66,113 @@ pub enum OutputFormat {
     Csv,
 }
 
-fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
-    Ok(match value {
-        StringOrNumber::Float(f) => {
-            if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
-                "0.0".to_string()
-            } else {
-                // Round any floating point numbers to 10 significant figures, like the Python does
-                format!("{:.9e}", f).parse::<f64>()?.to_string()
-            }
-        }
-        _ => value.to_string(),
-    })
+struct StackString {
+    buf: [u8; 32],
+    len: usize,
 }
 
-fn format_row(row: &[StringOrNumber]) -> anyhow::Result<Vec<std::string::String>> {
-    let mut formatted_row: Vec<std::string::String> = Vec::new();
-    for value in row {
-        formatted_row.push(format_value(value)?);
+impl StackString {
+    const fn new() -> Self {
+        Self {
+            buf: [0; 32],
+            len: 0,
+        }
     }
-    Ok(formatted_row)
+
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+}
+
+impl Write for StackString {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.buf.len() - self.len;
+        let amt = std::cmp::min(remaining, buf.len());
+        self.buf[self.len..self.len + amt].copy_from_slice(&buf[..amt]);
+        self.len += amt;
+        Ok(amt)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+enum FormattedValue<'a> {
+    Borrowed(&'a str),
+    Owned(StackString),
+}
+
+impl<'a> AsRef<str> for FormattedValue<'a> {
+    fn as_ref(&self) -> &str {
+        match self {
+            FormattedValue::Borrowed(s) => s,
+            FormattedValue::Owned(b) => b.as_str(),
+        }
+    }
+}
+
+impl From<StackString> for FormattedValue<'_> {
+    fn from(s: StackString) -> Self {
+        FormattedValue::Owned(s)
+    }
+}
+
+impl<'a> From<&'a str> for FormattedValue<'a> {
+    fn from(s: &'a str) -> Self {
+        FormattedValue::Borrowed(s)
+    }
+}
+
+fn format_value<'a>(value: &'a StringOrNumber, buf: &'a mut StackString) -> &'a str {
+    match value {
+        StringOrNumber::Float(f) => {
+            if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
+                "0.0".into()
+            } else {
+                // Round any floating point numbers to 10 significant figures, like the Python does
+                buf.clear();
+                let _ = write!(buf, "{:.9e}", f);
+                buf.as_str()
+            }
+        }
+        StringOrNumber::Integer(int) => {
+            buf.clear();
+            let _ = write!(buf, "{}", int);
+            buf.as_str()
+        }
+        StringOrNumber::String(s) => s.as_str(),
+    }
+}
+
+fn write_formatted_row(
+    row: &[StringOrNumber],
+    writer: &mut csv::Writer<impl Write>,
+) -> Result<(), std::io::Error> {
+    // we don't expect more than 1500 columns (some files are very wide!!)
+    const MAX_COLS: usize = 1_500;
+
+    let mut buffers = [const { StackString::new() }; MAX_COLS];
+
+    let record = row
+        .iter()
+        .zip(buffers.iter_mut())
+        .enumerate()
+        .map(|(i, (val, buf))| {
+            if i < MAX_COLS {
+                format_value(val, buf)
+            } else {
+                "".into()
+            }
+        });
+
+    writer.write_record(record)?;
+
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -712,7 +799,7 @@ fn write_core_output_file(
                 .collect(),
         );
 
-        writer.write_record(format_row(&row)?)?;
+        write_formatted_row(&row, &mut writer)?;
     }
 
     Ok(())
@@ -809,31 +896,39 @@ fn write_core_output_file_summary(
 
     let blank_line: Vec<&'static str> = vec![];
 
+    let mut buf = const { StackString::new() };
+
     writer.write_record(["Energy Demand Summary"])?;
     writer.write_record(["", "", "Total"])?;
-    writer.write_record([
-        "Space heat demand".to_string(),
-        "kWh/m2".to_string(),
-        format_value(&output.summary.space_heat_demand_by_floor_area().into())?,
-    ])?;
-    writer.write_record([
-        "Space cool demand".to_string(),
-        "kWh/m2".to_string(),
-        format_value(&output.summary.space_cool_demand_by_floor_area().into())?,
-    ])?;
+    writer.serialize((
+        "Space heat demand",
+        "kWh/m2",
+        format_value(
+            &output.summary.space_heat_demand_by_floor_area().into(),
+            &mut buf,
+        ),
+    ))?;
+    writer.serialize((
+        "Space cool demand",
+        "kWh/m2",
+        format_value(
+            &output.summary.space_cool_demand_by_floor_area().into(),
+            &mut buf,
+        ),
+    ))?;
     writer.write_record(&blank_line)?;
     writer.write_record(["Energy Supply Summary"])?;
     writer.write_record(["", "kWh", "timestep", "month", "day", "hour of day"])?;
 
     let peak_consumption = &output.summary.electricity_peak_consumption;
-    writer.write_record([
-        "Peak consumption (electricity)".to_string(),
-        format_value(&peak_consumption.peak.into())?,
-        peak_consumption.index.to_string(),
-        month_name(peak_consumption.month)?.to_string(),
-        peak_consumption.day.to_string(),
-        format_value(&peak_consumption.hour.into())?,
-    ])?;
+    writer.serialize((
+        "Peak consumption (electricity)",
+        format_value(&peak_consumption.peak.into(), &mut buf).to_owned(),
+        peak_consumption.index,
+        month_name(peak_consumption.month)?,
+        peak_consumption.day,
+        format_value(&peak_consumption.hour.into(), &mut buf),
+    ))?;
     writer.write_record(&blank_line)?;
 
     let mut header_row = vec!["".to_owned(), "Total".to_owned()];
@@ -929,8 +1024,8 @@ fn write_core_output_file_summary(
             .iter()
             .map(|x| format!("{}", x).into_bytes()),
     )?;
-    for row in delivered_energy_rows {
-        writer.write_record(format_row(&row)?)?;
+    for row in delivered_energy_rows.iter() {
+        write_formatted_row(&row, &mut writer)?;
     }
 
     if !dhw_cop_rows.is_empty() {
@@ -961,21 +1056,21 @@ fn write_core_output_file_summary(
             });
         }
         for row in dhw_cop_rows {
-            writer.write_record(format_row(&row)?)?;
+            write_formatted_row(&row, &mut writer)?;
         }
     }
     if !heat_cop_rows.is_empty() {
         writer.write_record(&blank_line)?;
         writer.write_record(["Space heating system", "Overall CoP"])?;
         for row in heat_cop_rows {
-            writer.write_record(format_row(&row)?)?;
+            write_formatted_row(&row, &mut writer)?;
         }
     }
     if !cool_cop_rows.is_empty() {
         writer.write_record(&blank_line)?;
         writer.write_record(["Space cooling system", "Overall CoP"])?;
         for row in cool_cop_rows {
-            writer.write_record(format_row(&row)?)?;
+            write_formatted_row(&row, &mut writer)?;
         }
     }
 
@@ -1190,12 +1285,12 @@ fn write_core_output_file_heat_balance(
 
     writer.write_record(&headings_annual)?;
     writer.write_record(&units_annual)?;
-    writer.write_record(format_row(&annual_totals)?)?;
+    write_formatted_row(&annual_totals, &mut writer)?;
     writer.write_record([""])?;
     writer.write_record(&headings)?;
     writer.write_record(&units_row)?;
     for row in rows {
-        writer.write_record(format_row(&row)?)?;
+        write_formatted_row(&row, &mut writer)?;
     }
     Ok(())
 }
@@ -1262,7 +1357,7 @@ fn write_core_output_file_heat_source_wet(
                     .map(|col| service_results[col][t_idx].clone().into()),
             );
         }
-        writer.write_record(format_row(&row)?)?;
+        write_formatted_row(&row, &mut writer)?;
     }
 
     Ok(())
@@ -1276,14 +1371,16 @@ fn write_core_output_file_heat_source_wet_summary(
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
+    let mut buf = const { StackString::new() };
+
     for (i, (service_name, service_results)) in heat_source_wet_results_annual.iter().enumerate() {
         writer.write_record([service_name.to_string()])?;
         for (name, value) in service_results.iter() {
-            writer.write_record([
-                name.0.as_bytes(),
-                name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
-                format_value(&StringOrNumber::from(value))?.as_bytes(),
-            ])?;
+            writer.serialize((
+                name.0.clone(),
+                name.1.clone(),
+                format_value(&StringOrNumber::from(value), &mut buf),
+            ))?;
         }
         if i < heat_source_wet_results_annual.len() - 1 {
             // blank separator between services, not after last
@@ -1358,7 +1455,7 @@ fn write_core_output_file_emitters_detailed(
                 StringOrNumber::from(emitters_detailed_result.fan_energy_kwh),
             ];
 
-            writer.write_record(format_row(row)?)?;
+            write_formatted_row(row, &mut writer)?;
         }
     }
 
@@ -1395,7 +1492,7 @@ fn write_core_output_file_esh_detailed(
         writer.write_record(units_row)?;
         for esh_results in esh_output.values() {
             let row = esh_results.iter().map(StringOrNumber::from).collect_vec();
-            writer.write_record(format_row(&row)?)?;
+            write_formatted_row(&row, &mut writer)?;
         }
 
         writer.flush()?;
@@ -1464,7 +1561,7 @@ fn write_core_output_file_ventilation_detailed(
     ])?;
 
     for ventilation_results in vent_output_list.iter() {
-        writer.write_record(format_row(ventilation_results)?)?;
+        write_formatted_row(ventilation_results, &mut writer)?;
     }
 
     Ok(())
@@ -1479,7 +1576,7 @@ fn write_core_output_file_hot_water_source(
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for hot_water_source_row in hot_water_source_results {
-        writer.write_record(format_row(hot_water_source_row)?)?;
+        write_formatted_row(hot_water_source_row, &mut writer)?;
     }
 
     Ok(())
