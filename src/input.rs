@@ -20,6 +20,7 @@ use serde_with::skip_serializing_none;
 use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
 use std::ops::Index;
+use std::str::FromStr;
 use std::sync::Arc;
 
 const HOURS_IN_YEAR: usize = 8760;
@@ -3063,7 +3064,6 @@ pub enum BuildingElement {
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_floor_construction: f64,
 
-        #[validate(exclusive_minimum = 0.)]
         /// Areal heat capacity of the ground floor element (unit: J/m2.K)
         #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,
@@ -5291,10 +5291,10 @@ impl From<&ApplianceKey> for String {
     }
 }
 
-impl TryFrom<&str> for ApplianceKey {
-    type Error = anyhow::Error;
+impl FromStr for ApplianceKey {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(format!("\"{}\"", value).as_str()).map_err(|err| anyhow!(err))
     }
 }
