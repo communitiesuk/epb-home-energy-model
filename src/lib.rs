@@ -71,7 +71,7 @@ fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
                 "0.0".to_string()
             } else {
                 // Round any floating point numbers to 10 significant figures, like the Python does
-                format!("{:.9e}", f).parse::<f64>()?.to_string()
+                format!("{:.9e}", f)
             }
         }
         _ => value.to_string(),
