@@ -8,6 +8,7 @@ license-file = "LICENSE.md"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
+accurate = "0.4.1"
 approx = "0.5.1"
 anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
