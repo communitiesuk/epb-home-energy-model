@@ -130,7 +130,7 @@ fn format_value<'a>(value: &'a StringOrNumber, buf: &'a mut StackString) -> &'a 
     match value {
         StringOrNumber::Float(f) => {
             if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
-                "0.0".into()
+                "0.0"
             } else {
                 // Round any floating point numbers to 10 significant figures, like the Python does
                 buf.clear();
@@ -164,7 +164,7 @@ fn write_formatted_row(
             if i < MAX_COLS {
                 format_value(val, buf)
             } else {
-                "".into()
+                ""
             }
         });
 
@@ -979,7 +979,7 @@ fn write_core_output_file_summary(
             .map(|x| format!("{}", x).into_bytes()),
     )?;
     for row in delivered_energy_rows.iter() {
-        write_formatted_row(&row, &mut writer)?;
+        write_formatted_row(row, &mut writer)?;
     }
 
     if !dhw_cop_rows.is_empty() {
