@@ -3333,7 +3333,7 @@ pub fn pitch_class(pitch: f64) -> HeatFlowDirection {
     }
 }
 
-pub(crate) fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
+pub fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
     (1.0 / u_value) - r_si_for_pitch(pitch) - R_SE
 }
 
