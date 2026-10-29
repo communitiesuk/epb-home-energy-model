@@ -1458,10 +1458,10 @@ impl ExternalConditions {
                             overhang_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::SideFinLeft { depth, distance } => {
-                            right_sidefin_depths_distances.push(vec![*depth, *distance]);
+                            left_sidefin_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::SideFinRight { depth, distance } => {
-                            left_sidefin_depths_distances.push(vec![*depth, *distance]);
+                            right_sidefin_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::Obstacle {
                             height,
