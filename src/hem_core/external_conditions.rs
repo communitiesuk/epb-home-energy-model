@@ -1446,33 +1446,38 @@ impl ExternalConditions {
         // unlike upstream Python, collecting straight to an f64 as there are never multiple diffuse factors to pick from
         let diffuse_factor: f64 = if window_shading.is_some() {
             // # Unpack window shading details
-            let mut overhang_depths_distances = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut right_sidefin_depths_distances = vec![vec![0.0, 1.0]]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut left_sidefin_depths_distances = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut obstacle_heights_distances = vec![vec![0.0, 1.0, 0.0]]; // [H,L,Trans]
+            let mut overhang_depths_distances = vec![WindowShadingObject::Overhang {
+                depth: 0.0,
+                distance: 1.0,
+            }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut right_sidefin_depths_distances = vec![WindowShadingObject::SideFinRight {
+                depth: 0.0,
+                distance: 1.0,
+            }]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut left_sidefin_depths_distances = vec![WindowShadingObject::SideFinLeft {
+                depth: 0.0,
+                distance: 1.0,
+            }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut obstacle_heights_distances = vec![WindowShadingObject::Obstacle {
+                height: 0.0,
+                distance: 1.0,
+                transparency: 0.0,
+            }]; // [H,L,Trans]
 
             if let Some(shading_objects) = window_shading {
                 for shading_object in shading_objects.iter() {
                     match shading_object {
-                        WindowShadingObject::Overhang { depth, distance } => {
-                            overhang_depths_distances.push(vec![*depth, *distance]);
+                        WindowShadingObject::Overhang { .. } => {
+                            overhang_depths_distances.push(*shading_object);
                         }
-                        WindowShadingObject::SideFinLeft { depth, distance } => {
-                            left_sidefin_depths_distances.push(vec![*depth, *distance]);
+                        WindowShadingObject::SideFinLeft { .. } => {
+                            left_sidefin_depths_distances.push(*shading_object);
                         }
-                        WindowShadingObject::SideFinRight { depth, distance } => {
-                            right_sidefin_depths_distances.push(vec![*depth, *distance]);
+                        WindowShadingObject::SideFinRight { .. } => {
+                            right_sidefin_depths_distances.push(*shading_object);
                         }
-                        WindowShadingObject::Obstacle {
-                            height,
-                            distance,
-                            transparency,
-                        } => {
-                            obstacle_heights_distances.push(vec![
-                                *height,
-                                *distance,
-                                *transparency,
-                            ]);
+                        WindowShadingObject::Obstacle { .. } => {
+                            obstacle_heights_distances.push(*shading_object);
                         }
                         WindowShadingObject::Reveal { .. } => {
                             bail!("shading object type 'reveal' not allowed in context of calculating diffuse shading reduction factor")
@@ -1519,15 +1524,41 @@ impl ExternalConditions {
                     iteration_vec[2],
                     iteration_vec[3],
                 );
-                let overhang_depth = overhang_depth_distance[0];
-                let overhang_distance = overhang_depth_distance[1];
-                let left_sidefin_depth = left_sidefin_depth_distance[0];
-                let left_sidefin_distance = left_sidefin_depth_distance[1];
-                let right_sidefin_depth = right_sidefin_depth_distance[0];
-                let right_sidefin_distance = right_sidefin_depth_distance[1];
-                let obstacle_heigh = obstacle_height_distance[0];
-                let obstacle_distance = obstacle_height_distance[1];
-                let obstacle_transparency = obstacle_height_distance[2];
+                let (overhang_depth, overhang_distance) =
+                    if let WindowShadingObject::Overhang { depth, distance } =
+                        overhang_depth_distance
+                    {
+                        (*depth, *distance)
+                    } else {
+                        unreachable!()
+                    };
+                let (left_sidefin_depth, left_sidefin_distance) =
+                    if let WindowShadingObject::SideFinLeft { depth, distance } =
+                        left_sidefin_depth_distance
+                    {
+                        (*depth, *distance)
+                    } else {
+                        unreachable!()
+                    };
+                let (right_sidefin_depth, right_sidefin_distance) =
+                    if let WindowShadingObject::SideFinRight { depth, distance } =
+                        right_sidefin_depth_distance
+                    {
+                        (*depth, *distance)
+                    } else {
+                        unreachable!()
+                    };
+                let (obstacle_height, obstacle_distance, obstacle_transparency) =
+                    if let WindowShadingObject::Obstacle {
+                        height,
+                        distance,
+                        transparency,
+                    } = obstacle_height_distance
+                    {
+                        (*height, *distance, *transparency)
+                    } else {
+                        unreachable!()
+                    };
                 // # Calculate required geometric ratios
                 // # Note: PD CEN ISO/TR 52016-2:2017 Section F.6.3 refers to ISO 52016-1:2017
                 // #       Section F.5.5.1.6 for the definition of P1 and P2. However, this
@@ -1631,7 +1662,7 @@ impl ExternalConditions {
                 // covered by 52016-1 or -2, therefore derived from first principles and general
                 // method basis.
 
-                let net_shade_height = obstacle_heigh - base_height;
+                let net_shade_height = obstacle_height - base_height;
                 let f_sh_dif_obs = if view_factor_sky_no_obstacles == 0. || net_shade_height <= 0. {
                     // Shading makes no difference if sky not visible (avoid divide-by-zero)
                     1.0
@@ -1646,7 +1677,7 @@ impl ExternalConditions {
                         .to_degrees();
                     // Sky view factor reduction
                     let f_w_ob = view_factor_sky_no_obstacles
-                        .min((1. - (90. - angle_obst).to_radians().sin()) * 0.5)
+                        .min((((1. - (90. - angle_obst)) as f64).to_radians().sin()) * 0.5)
                         * (1. - prop_above_obstacle)
                         * (1. - obstacle_transparency);
                     (view_factor_sky_no_obstacles - f_w_ob) / view_factor_sky_no_obstacles
