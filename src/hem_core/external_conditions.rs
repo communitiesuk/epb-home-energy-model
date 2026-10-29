@@ -1443,11 +1443,8 @@ impl ExternalConditions {
         //      F_w_sky when alpha = 0
         let beta = tilt.to_radians();
 
-        let diffuse_factors = if window_shading.is_some() {
-            // create lists of diffuse shading factors to keep the largest one
-            // in case there are multiple shading objects
-            let mut diffuse_factors: Vec<f64> = vec![];
-
+        // unlike upstream Python, collecting straight to an f64 as there are never multiple diffuse factors to pick from
+        let diffuse_factor: f64 = if window_shading.is_some() {
             // # Unpack window shading details
             let mut overhang_depths_distances = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
             let mut right_sidefin_depths_distances = vec![vec![0.0, 1.0]]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
@@ -1688,17 +1685,12 @@ impl ExternalConditions {
             if diffuse_irr_total == 0. {
                 bail!("Zero diffuse radiation with non-zero direct radiation.");
             }
-            let diffuse_factor = (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor)
-                + f_sh_ref * diffuse_irr_ref)
-                / diffuse_irr_total;
-            diffuse_factors.push(diffuse_factor);
-
-            diffuse_factors
+            (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor) + f_sh_ref * diffuse_irr_ref)
+                / diffuse_irr_total
         } else {
-            vec![1.]
+            1.
         };
 
-        let diffuse_factor = diffuse_factors.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("Diffuse shading reduction factor could not be calculated as fdiff_list was empty."))?;
         Ok(diffuse_factor.min(remote_obstacles_diffuse_factor))
     }
 
