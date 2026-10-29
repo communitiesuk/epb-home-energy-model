@@ -79,6 +79,7 @@ pub(crate) struct Emitters {
     min_flow_rate: f64,
     max_flow_rate: f64,
     fancoil: Option<Arc<WetEmitter>>,
+    c_n_pairs: Arc<[(f64, f64)]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -432,6 +433,17 @@ impl Emitters {
             .map(|emitter| emitter.ok_or_else(|| anyhow!("Emitter type unexpectedly not ingested")))
             .collect::<anyhow::Result<_>>()?;
 
+        let c_n_pairs = Arc::from(
+            model_emitters
+                .iter()
+                .flat_map(|emitter| match emitter.as_ref() {
+                    WetEmitter::Radiator { c, n, .. } => Some((*c, *n)),
+                    WetEmitter::Ufh { c, n, .. } => Some((*c, *n)),
+                    WetEmitter::Fancoil { .. } => None,
+                })
+                .collect::<Vec<(f64, f64)>>(),
+        );
+
         // Considering the big differences in the calculation for c, n type emitters (like Radiators and UFH)
         // and fancoils that use a implicit (manufacturer data driven) approach, the initial implementation
         // of several types of emitters does not allow for the mix of fancoils with other systems. This is
@@ -467,6 +479,7 @@ impl Emitters {
             min_flow_rate,
             max_flow_rate,
             fancoil,
+            c_n_pairs,
         })
     }
 
@@ -718,14 +731,8 @@ impl Emitters {
 
     /// Extract out c and n values from emitters so we don't need to hold a reference to emitters elsewhere
     /// Panics if called when one of the emitters is a fancoil.
-    fn extract_c_n_pairs(&self) -> Vec<(f64, f64)> {
-        self.emitters.iter().map(|emitter| {
-            if let (Ok(c), Ok(n)) = (emitter.c(), emitter.n()) {
-                (c, n)
-            } else {
-                panic!("Fancoil emitter, or an emitter with no c and n values, was logically not expected here");
-            }
-        }).collect()
+    fn extract_c_n_pairs(&self) -> Arc<[(f64, f64)]> {
+        self.c_n_pairs.clone()
     }
 
     pub(crate) fn func_temp_emitter_change_rate(
@@ -775,7 +782,7 @@ impl Emitters {
     }
 
     fn func_temp_emitter_change_rate_pure(
-        c_n_pairs: Vec<(f64, f64)>,
+        c_n_pairs: Arc<[(f64, f64)]>,
         thermal_mass: Option<f64>,
         power_input: f64,
     ) -> impl Fn(f64, &[f64; 1]) -> [f64; 1] {
@@ -815,7 +822,7 @@ impl Emitters {
     }
 
     fn temp_emitter_pure(
-        c_n_pairs: Vec<(f64, f64)>,
+        c_n_pairs: Arc<[(f64, f64)]>,
         thermal_mass: Option<f64>,
         time_start: f64,
         time_end: f64,
@@ -1196,7 +1203,7 @@ impl Emitters {
     }
 
     fn energy_surplus_during_cooldown_pure(
-        c_n_pairs: Vec<(f64, f64)>,
+        c_n_pairs: Arc<[(f64, f64)]>,
         thermal_mass: Option<f64>,
         temp_emitter_prev: f64,
         time_cooldown: f64,
