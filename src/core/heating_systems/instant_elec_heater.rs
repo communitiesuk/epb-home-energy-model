@@ -4,20 +4,16 @@ use crate::core::controls::time_control::SetpointOrCombinationControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::constants::MAX_TEMPERATURE_TOUCHABLE;
 use crate::core::solvers::root;
-use crate::core::solvers::solve_ivp::{
-    solve_ivp, OdeResult, SharedIvpSolveFunction, TerminatingEvent,
-};
+use crate::core::solvers::solve_ivp::{solve_ivp, OdeResult, TerminatingEvent};
 use crate::corpus::TempInternalAirFn;
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use ndarray::{array, Array1};
 #[cfg(test)]
 use parking_lot::RwLock;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use tracing::warn;
 
 /// Type to represent instantaneous electric heaters
@@ -358,7 +354,7 @@ impl InstantElecHeater {
     fn func_temp_emitter_change_rate(
         power_input: f64,
         ThermalMassFields { c, n, thermal_mass }: ThermalMassFields,
-    ) -> SharedIvpSolveFunction {
+    ) -> impl Fn(f64, &[f64; 1]) -> [f64; 1] {
         // Heat balance equation for radiators:
         //             (T_E(t) - T_E(t-1)) * K_E / timestep = power_input - power_output
         //         where:
@@ -392,9 +388,7 @@ impl InstantElecHeater {
         // Apply min value of zero to temp_diff because the power law does not
         // work for negative temperature difference
         // solve for temp_diff iteratively
-        Arc::new(move |_t, temp_diff| {
-            array![(power_input - c * 0.0f64.max(temp_diff[0]).powf(n)) / thermal_mass]
-        })
+        move |_t, temp_diff| [(power_input - c * 0.0f64.max(temp_diff[0]).powf(n)) / thermal_mass]
     }
 
     /// Calculate emitter output at given emitter and room temp
@@ -483,46 +477,44 @@ impl InstantElecHeater {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
 
-        let events = temp_emitter_max.map(|temp_emitter_max| {
-            let temp_diff_max = temp_emitter_max - temp_rm;
+        let temp_diff_max = temp_emitter_max.map(|temp_emitter_max| temp_emitter_max - temp_rm);
 
-            [TerminatingEvent::new(
-                Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 { y[0] - temp_diff_max }),
-                None,
-            )]
-        });
+        let func = move |_t: f64, y: &[f64; _]| -> f64 {
+            y[0] - temp_diff_max.expect(
+                "temp_diff_max was always expected to exist in places this closure is called",
+            )
+        };
+
+        let events = temp_emitter_max.map(|_| [TerminatingEvent::new(&func, None)]);
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate: SharedIvpSolveFunction =
+        let func_temp_emitter_change_rate =
             Self::func_temp_emitter_change_rate(power_input, thermal_mass_fields);
 
         let temp_diff_emitter_rm_results = solve_ivp(
             &func_temp_emitter_change_rate,
             (time_start, time_end),
-            &array![temp_diff_start],
-            events.as_ref().map(|events| events.as_slice()),
+            *&[temp_diff_start],
+            if let Some(ref events) = events {
+                events
+            } else {
+                &[]
+            },
             None,
             None,
         )?;
 
-        let OdeResult { t_events, y, .. } = temp_diff_emitter_rm_results;
+        let OdeResult { event, y, .. } = temp_diff_emitter_rm_results;
 
         // Get time at which emitters reach max. temp
-        let time_temp_diff_max_reached: Option<f64> = if let Some(ref t_events) = t_events {
-            temp_emitter_max.and_then(|_| {
-                t_events
-                    .first()
-                    .and_then(|t_events| t_events.iter().copied().last())
-            })
+        let time_temp_diff_max_reached: Option<f64> = if let Some((_, root)) = event {
+            temp_emitter_max.map(|_| root)
         } else {
             None
         };
 
         // Get emitter temp at end of timestep
-        let temp_diff_emitter_rm_final = y
-            .last()
-            .ok_or_else(|| anyhow!("A non-empty y array from solve_ivp had no available values"))?
-            [0];
+        let temp_diff_emitter_rm_final = y[0];
         let temp_emitter = temp_rm + temp_diff_emitter_rm_final;
 
         Ok((temp_emitter, time_temp_diff_max_reached))

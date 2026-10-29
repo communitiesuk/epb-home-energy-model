@@ -15,6 +15,7 @@ arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 arcstr = { version = "1.2.0", features = ["serde"] }
 arc-swap = "1.9.0"
 argmin = "0.11.0"
+arrayvec = "0.7.8"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.45"
@@ -35,7 +36,6 @@ itertools = "0.15.0"
 jsonschema = { version = "0.58.4", default-features = false, features = ["macros"] }
 monostate = "1.0.2"
 nalgebra = "0.34.2"
-ndarray = "0.17.2"
 ordered-float = "5.3.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 petgraph = "0.8.3"
