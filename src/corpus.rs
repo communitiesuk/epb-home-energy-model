@@ -4334,7 +4334,6 @@ impl WetHeatSource {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump
                 .lock()
-                .clone()
                 .output_detailed_results(
                     hot_water_energy_output,
                     hot_water_source_name_for_heat_battery_service,

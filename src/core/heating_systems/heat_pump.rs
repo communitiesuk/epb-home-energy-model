@@ -28,6 +28,7 @@ use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arrayvec::ArrayVec;
+use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -38,6 +39,7 @@ use polyfit_rs::polyfit_rs::polyfit;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 const N_EXER: f64 = 3.0;
@@ -307,7 +309,7 @@ pub struct BufferTankServiceResult {
 }
 
 /// A type for Buffer Tanks linked to heat pumps.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BufferTank {
     daily_losses: f64,
     volume: f64,
@@ -323,9 +325,55 @@ pub struct BufferTank {
     cp: f64,
     rho: f64,
     q_heat_loss_buffer_rbl: f64,
-    track_buffer_loss: f64,
+    track_buffer_loss: AtomicF64,
     temp_average_buffer: f64,
     detailed_results: Option<Vec<Vec<BufferTankServiceResult>>>,
+}
+
+#[cfg(test)]
+impl Clone for BufferTank {
+    fn clone(&self) -> Self {
+        let BufferTank {
+            daily_losses,
+            volume,
+            pump_fixed_flow_rate,
+            pump_power_at_flow_rate,
+            number_of_zones,
+            simulation_timestep,
+            _contents: contents,
+            service_results,
+            _buffer_emitter_circ_flow_rate: buffer_rate,
+            _hp_buffer_circ_flow_rate: hp_rate,
+            _print_warning: print_warning,
+            cp,
+            rho,
+            q_heat_loss_buffer_rbl,
+            track_buffer_loss,
+            temp_average_buffer,
+            detailed_results,
+            ..
+        } = &self;
+
+        Self {
+            daily_losses: *daily_losses,
+            volume: *volume,
+            pump_fixed_flow_rate: *pump_fixed_flow_rate,
+            pump_power_at_flow_rate: *pump_power_at_flow_rate,
+            number_of_zones: *number_of_zones,
+            simulation_timestep: *simulation_timestep,
+            _contents: *contents,
+            service_results: service_results.clone(),
+            _buffer_emitter_circ_flow_rate: *buffer_rate,
+            _hp_buffer_circ_flow_rate: *hp_rate,
+            _print_warning: *print_warning,
+            cp: *cp,
+            rho: *rho,
+            q_heat_loss_buffer_rbl: *q_heat_loss_buffer_rbl,
+            track_buffer_loss: track_buffer_loss.load(Ordering::SeqCst).into(),
+            temp_average_buffer: *temp_average_buffer,
+            detailed_results: detailed_results.clone(),
+        }
+    }
 }
 
 impl BufferTank {
@@ -358,19 +406,19 @@ impl BufferTank {
             cp,
             rho,
             q_heat_loss_buffer_rbl: 0.0,
-            track_buffer_loss: 0.0,
+            track_buffer_loss: 0.0.into(),
             // Initialisation of buffer tank temperature needed in case no power required by emitters in first step
             temp_average_buffer: initial_temp,
             detailed_results: output_detailed_results.then(Default::default),
         }
     }
 
-    pub fn update_buffer_loss(&mut self, buffer_loss: f64) {
-        self.track_buffer_loss = buffer_loss;
+    pub fn update_buffer_loss(&self, buffer_loss: f64) {
+        self.track_buffer_loss.store(buffer_loss, Ordering::SeqCst);
     }
 
     pub fn buffer_loss(&self) -> f64 {
-        self.track_buffer_loss
+        self.track_buffer_loss.load(Ordering::SeqCst)
     }
 
     /// Thermal losses are calculated with respect to the impact of the temperature set point
@@ -523,11 +571,6 @@ impl BufferTank {
         }
 
         Ok(&self.service_results)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_track_buffer_loss(&mut self, buffer_loss: f64) {
-        self.track_buffer_loss = buffer_loss;
     }
 }
 
@@ -1718,10 +1761,10 @@ impl HeatPumpServiceSpace {
         )
     }
 
-    fn temp_spread_correction_fn(
-        &self,
+    fn temp_spread_correction_fn<'a>(
+        &'a self,
         source_type: HeatPumpSourceType,
-    ) -> Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64> {
+    ) -> Box<dyn Fn(f64, f64, f64, &'a HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
@@ -1740,7 +1783,7 @@ impl HeatPumpServiceSpace {
             move |temp_output,
                   temp_source,
                   design_flow_temp_op_cond,
-                  test_data: HeatPumpTestData| {
+                  test_data: &HeatPumpTestData| {
                 test_data.temp_spread_correction(
                     temp_source,
                     temp_output,
@@ -1849,7 +1892,7 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
-#[derive(Clone, Educe)]
+#[derive(Educe)]
 #[educe(Debug)]
 pub struct HeatPump {
     // energy supply
@@ -1860,7 +1903,7 @@ pub struct HeatPump {
     external_conditions: Arc<ExternalConditions>,
     // litres/ second
     service_results: Arc<RwLock<Vec<ServiceResult>>>,
-    total_time_running_current_timestep_full_load: f64,
+    total_time_running_current_timestep_full_load: AtomicF64,
     time_running_continuous: f64,
     source_type: HeatPumpSourceType,
     sink_type: HeatPumpSinkType,
@@ -2537,9 +2580,10 @@ impl HeatPump {
     ) -> Result<f64, BelowAbsoluteZeroError> {
         let time_elapsed_hp = match self.backup_ctrl {
             HeatPumpBackupControlType::TopUp => None,
-            HeatPumpBackupControlType::None | HeatPumpBackupControlType::Substitute => {
-                Some(self.total_time_running_current_timestep_full_load)
-            }
+            HeatPumpBackupControlType::None | HeatPumpBackupControlType::Substitute => Some(
+                self.total_time_running_current_timestep_full_load
+                    .load(Ordering::SeqCst),
+            ),
         };
 
         Ok(match hybrid_boiler_service {
@@ -2568,14 +2612,14 @@ impl HeatPump {
     /// spent on higher-priority services
     ///
     /// Note: Call via a HeatPumpService object, not directly.
-    fn energy_output_max(
-        &mut self,
+    fn energy_output_max<'a>(
+        &'a mut self,
         temp_output: f64,
         temp_return_feed: f64,
         design_flow_temp_op_cond: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         service_type: Option<HeatingServiceType>,
-        temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        temp_spread_correction: Option<TempSpreadCorrectionArg<'a>>,
         time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
         service_name: Option<&str>,
@@ -2707,12 +2751,12 @@ impl HeatPump {
     }
 
     /// Calculate CoP at operating conditions
-    fn cop_op_cond(
-        &self,
+    fn cop_op_cond<'a>(
+        &'a self,
         _service_type: Option<HeatingServiceType>,
         temp_output: f64,
         temp_source: f64,
-        temp_spread_correction: TempSpreadCorrectionArg,
+        temp_spread_correction: TempSpreadCorrectionArg<'a>,
         design_flow_temp_op_cond: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -2722,7 +2766,7 @@ impl HeatPump {
                 temp_output,
                 temp_source,
                 design_flow_temp_op_cond,
-                self.test_data.clone(),
+                &self.test_data,
             ),
         };
 
@@ -2972,7 +3016,9 @@ impl HeatPump {
         let additional_time_unavailable = additional_time_unavailable.unwrap_or(0.);
 
         (timestep
-            - self.total_time_running_current_timestep_full_load
+            - self
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst)
             - additional_time_unavailable)
             * (1. - time_start / timestep)
     }
@@ -2998,8 +3044,8 @@ impl HeatPump {
     ///     distributed, neither coinciding perfectly with the time that the
     ///     current service is running or the time it is not running. This
     ///     variable is relative to the beginning of the timestep
-    fn run_demand_energy_calc(
-        &mut self,
+    fn run_demand_energy_calc<'a>(
+        &'a self,
         service_name: &str,
         service_type: &HeatingServiceType,
         energy_output_required: f64,
@@ -3010,7 +3056,7 @@ impl HeatPump {
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
-        temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        temp_spread_correction: Option<TempSpreadCorrectionArg<'a>>,
         temp_used_for_scaling: Option<f64>,
         hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
@@ -3021,7 +3067,7 @@ impl HeatPump {
         let time_start = time_start.unwrap_or(0.);
         let (flow_temp_increase_due_to_buffer, power_buffer_tank_pump, heat_loss_buffer_kwh) =
             if let (Some(buffer_tank), Some(emitters_data)) =
-                (self.buffer_tank.as_mut(), emitters_data_for_buffer_tank)
+                (self.buffer_tank.as_ref(), emitters_data_for_buffer_tank)
             {
                 let buffer_tank_results = &emitters_data.result;
                 let BufferTankServiceResult {
@@ -3251,7 +3297,7 @@ impl HeatPump {
         // Calculate total energy delivered and input
         let mut energy_delivered_total = energy_delivered_hp + energy_delivered_backup;
 
-        if let Some(buffer_tank) = self.buffer_tank.as_mut() {
+        if let Some(buffer_tank) = self.buffer_tank.as_ref() {
             if energy_delivered_total > heat_loss_buffer_kwh
                 || relative_eq!(
                     energy_delivered_total,
@@ -3462,8 +3508,8 @@ impl HeatPump {
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
     ///
     /// Note: Call via a HeatPumpService object, not directly.
-    pub(crate) fn demand_energy(
-        &mut self,
+    pub(crate) fn demand_energy<'a>(
+        &'a mut self,
         service_name: &str,
         service_type: &HeatingServiceType,
         energy_output_required: f64,
@@ -3474,7 +3520,7 @@ impl HeatPump {
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
-        temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        temp_spread_correction: Option<TempSpreadCorrectionArg<'a>>,
         temp_used_for_scaling: Option<f64>,
         time_start: Option<f64>,
         hybrid_boiler_service: Option<HybridBoilerService>,
@@ -3482,6 +3528,17 @@ impl HeatPump {
         update_heat_source_state: Option<bool>,
     ) -> anyhow::Result<f64> {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+
+        // need to create these vars here to prevent needing to borrow self for them later
+        let backup_ctrl_is_substitute_or_none = matches!(
+            self.backup_ctrl,
+            HeatPumpBackupControlType::Substitute | HeatPumpBackupControlType::None
+        );
+        let backup_ctrl = self.backup_ctrl;
+        let total_time_running_current_timestep_full_load_at_method_start = self
+            .total_time_running_current_timestep_full_load
+            .load(Ordering::SeqCst);
+
         let mut service_results = self.run_demand_energy_calc(
             service_name,
             service_type,
@@ -3509,12 +3566,8 @@ impl HeatPump {
             // return the boiler running time so that it can be added to the total running time
             let is_hybrid_service = true;
 
-            let time_elapsed_hp = match self.backup_ctrl {
-                HeatPumpBackupControlType::TopUp => None,
-                HeatPumpBackupControlType::Substitute | HeatPumpBackupControlType::None => {
-                    Some(self.total_time_running_current_timestep_full_load)
-                }
-            };
+            let time_elapsed_hp = backup_ctrl_is_substitute_or_none
+                .then_some(total_time_running_current_timestep_full_load_at_method_start);
 
             let (energy_output_delivered_boiler, time_running_boiler) = match hybrid_boiler {
                 HybridBoilerService::Regular(boiler_regular) => {
@@ -3543,10 +3596,13 @@ impl HeatPump {
                     simtime,
                 )?,
             };
-            if self.backup_ctrl == HeatPumpBackupControlType::Substitute && update_heat_source_state
-            {
-                self.total_time_running_current_timestep_full_load += time_running_boiler
-                    .expect("hybrid_service_bool was true so value expected here");
+            if backup_ctrl == HeatPumpBackupControlType::Substitute && update_heat_source_state {
+                self.total_time_running_current_timestep_full_load
+                    .fetch_add(
+                        time_running_boiler
+                            .expect("hybrid_service_bool was true so value expected here"),
+                        Ordering::SeqCst,
+                    );
             }
 
             energy_output_delivered_boiler
@@ -3561,15 +3617,16 @@ impl HeatPump {
             self.service_results
                 .write()
                 .push(ServiceResult::Full(Box::new(service_results)));
-            self.total_time_running_current_timestep_full_load += time_running;
+            self.total_time_running_current_timestep_full_load
+                .fetch_add(time_running, Ordering::SeqCst);
         }
 
         Ok(energy_delivered_total + energy_output_delivered_boiler)
     }
 
     /// Return the cumulative running time and throughput factor (exhaust air HPs only)
-    pub(crate) fn running_time_throughput_factor(
-        &mut self,
+    pub(crate) fn running_time_throughput_factor<'a>(
+        &'a mut self,
         space_heat_running_time_cumulative: f64,
         service_name: &str,
         service_type: &HeatingServiceType,
@@ -3582,7 +3639,7 @@ impl HeatPump {
         service_on: bool,
         volume_heated_by_service: f64,
         simtime: SimulationTimeIteration,
-        temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        temp_spread_correction: Option<TempSpreadCorrectionArg<'a>>,
         time_start: Option<f64>,
     ) -> anyhow::Result<(f64, f64)> {
         let time_start = time_start.unwrap_or(0.);
@@ -3632,7 +3689,10 @@ impl HeatPump {
     }
 
     pub fn throughput_factor(&self) -> f64 {
-        self.calc_throughput_factor(self.total_time_running_current_timestep_full_load)
+        self.calc_throughput_factor(
+            self.total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst),
+        )
     }
 
     fn calc_energy_input(&self, t_idx: usize) -> anyhow::Result<()> {
@@ -3842,8 +3902,10 @@ impl HeatPump {
         self.calc_energy_input(timestep_idx)?;
 
         let timestep = self.simulation_timestep;
-        let time_remaining_current_timestep_full_load =
-            timestep - self.total_time_running_current_timestep_full_load;
+        let time_remaining_current_timestep_full_load = timestep
+            - self
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst);
         let part_load_sum: f64 =
             FSum::with_all(self.service_results.read().iter().filter_map(|result| {
                 if let ServiceResult::Full(heat_pump_calc) = result {
@@ -3861,7 +3923,9 @@ impl HeatPump {
             max_relative = 1e-09,
             epsilon = 1e-10
         ) {
-            self.time_running_continuous += self.total_time_running_current_timestep_full_load;
+            self.time_running_continuous += self
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst);
         } else {
             self.time_running_continuous = 0.;
         }
@@ -4280,12 +4344,12 @@ fn result_str(string: &str) -> String {
     string.into()
 }
 
-pub(crate) enum TempSpreadCorrectionArg {
+pub(crate) enum TempSpreadCorrectionArg<'a> {
     Float(f64),
-    Callable(Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64>),
+    Callable(Box<dyn Fn(f64, f64, f64, &'a HeatPumpTestData) -> f64>),
 }
 
-impl Debug for TempSpreadCorrectionArg {
+impl Debug for TempSpreadCorrectionArg<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -4873,7 +4937,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_buffer_loss(mut buffer_tank: BufferTank) {
+    fn test_update_buffer_loss(buffer_tank: BufferTank) {
         buffer_tank.update_buffer_loss(5.);
 
         assert_eq!(buffer_tank.buffer_loss(), 5.);
@@ -9319,7 +9383,7 @@ mod tests {
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
-        let mut heat_pump_with_boiler = create_heat_pump(
+        let heat_pump_with_boiler = create_heat_pump(
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
@@ -9424,7 +9488,7 @@ mod tests {
         }
 
         // Check without boiler and service_on True
-        let mut heat_pump = create_default_heat_pump(
+        let heat_pump = create_default_heat_pump(
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
@@ -9587,7 +9651,7 @@ mod tests {
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: modulating_control";
 
-        let mut heat_pump_mod_ctrl = create_heat_pump(
+        let heat_pump_mod_ctrl = create_heat_pump(
             heat_modcontrol_input,
             energy_supply_conn_name_auxiliary,
             None,
@@ -9812,7 +9876,7 @@ mod tests {
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
-        let mut heat_pump_with_boiler = create_heat_pump(
+        let heat_pump_with_boiler = create_heat_pump(
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
@@ -9980,7 +10044,7 @@ mod tests {
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: backup";
 
-        let mut heat_pump_backup = create_heat_pump(
+        let heat_pump_backup = create_heat_pump(
             heat_pump_with_sub_input,
             energy_supply_conn_name_auxiliary,
             None,
@@ -10089,7 +10153,7 @@ mod tests {
     fn test_run_demand_energy_calc_other(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
-        mut buffer_tank: BufferTank,
+        buffer_tank: BufferTank,
     ) {
         let emitters_data_for_buffer_tank = BufferTankEmittersDataWithResult {
             data: {
@@ -10317,7 +10381,7 @@ mod tests {
 
         assert_eq!(results, expected_results);
 
-        buffer_tank.set_track_buffer_loss(5.);
+        buffer_tank.update_buffer_loss(5.);
         // Python sets buffer_loss return value to 5 (buffer_tank.get_buffer_loss.return_value = 5)
         assert_eq!(buffer_tank.buffer_loss(), 5.);
 
@@ -10726,7 +10790,8 @@ mod tests {
         assert_eq!(
             heat_pump_with_boiler
                 .lock()
-                .total_time_running_current_timestep_full_load,
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst),
             0.11879765621857688
         );
     }
@@ -10742,12 +10807,12 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        heat_pump.total_time_running_current_timestep_full_load = 2.;
+        heat_pump.total_time_running_current_timestep_full_load = 2.0.into();
         heat_pump.overvent_ratio = 0.8;
 
         assert_relative_eq!(heat_pump.throughput_factor(), 0.6);
 
-        heat_pump.total_time_running_current_timestep_full_load = 3.;
+        heat_pump.total_time_running_current_timestep_full_load = 3.0.into();
         heat_pump.overvent_ratio = 0.7;
 
         assert_relative_eq!(heat_pump.throughput_factor(), 0.09999999999999964);
@@ -11283,7 +11348,9 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(
-            heat_pump.total_time_running_current_timestep_full_load,
+            heat_pump
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst),
             0.5939882810928845
         );
 
@@ -11327,7 +11394,12 @@ mod tests {
         // Call the method under test
         heat_pump.timestep_end(0).unwrap();
 
-        assert_eq!(heat_pump.total_time_running_current_timestep_full_load, 0.);
+        assert_eq!(
+            heat_pump
+                .total_time_running_current_timestep_full_load
+                .load(Ordering::SeqCst),
+            0.
+        );
         assert_eq!(*heat_pump.service_results.read().deref(), []);
     }
 
