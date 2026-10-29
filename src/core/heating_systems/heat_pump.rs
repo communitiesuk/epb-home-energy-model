@@ -27,6 +27,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arrayvec::ArrayVec;
 use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -1053,33 +1054,34 @@ impl HeatPumpTestData {
         carnot_cop_op_cond: f64,
         design_flow_temp_op_cond: f64,
     ) -> anyhow::Result<f64> {
-        let mut exer_eff_op_cond_list: Vec<f64> = Default::default();
+        // we never expect more than 10 design flow temperatures on a heat pump
+        let exer_eff_op_cond_list: ArrayVec<f64, 10> = self
+            .design_flow_temps
+            .iter()
+            .map(|design_flow_temp| {
+                // Get exergy load ratio at operating conditions
+                // Get exergy load ratio and exergy efficiency at test conditions
+                // above and below operating conditions
+                let lr_op_cond = self.load_ratio_at_operating_conditions(
+                    temp_output,
+                    temp_source,
+                    carnot_cop_op_cond,
+                    **design_flow_temp,
+                )?;
+                let (lr_below, lr_above, eff_below, eff_above) =
+                    self.lr_eff_either_side_of_op_cond(design_flow_temp, lr_op_cond)?;
 
-        for design_flow_temp in &self.design_flow_temps {
-            // Get exergy load ratio at operating conditions
-            // Get exergy load ratio and exergy efficiency at test conditions
-            // above and below operating conditions
-            let lr_op_cond = self.load_ratio_at_operating_conditions(
-                temp_output,
-                temp_source,
-                carnot_cop_op_cond,
-                **design_flow_temp,
-            )?;
-            let (lr_below, lr_above, eff_below, eff_above) =
-                self.lr_eff_either_side_of_op_cond(design_flow_temp, lr_op_cond)?;
-
-            // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
-            // Get exergy efficiency by interpolating between figures above and
-            // below operating conditions
-            let exer_eff_op_cond = if lr_below == lr_above {
-                eff_below
-            } else {
-                eff_below
-                    + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above)
-            };
-
-            exer_eff_op_cond_list.push(exer_eff_op_cond);
-        }
+                // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
+                // Get exergy efficiency by interpolating between figures above and
+                // below operating conditions
+                anyhow::Ok(if lr_below == lr_above {
+                    eff_below
+                } else {
+                    eff_below
+                        + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above)
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
         let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         let design_temps_for_interp = &self
