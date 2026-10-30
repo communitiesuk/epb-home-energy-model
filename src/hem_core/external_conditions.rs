@@ -12,6 +12,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
+use smallvec::{smallvec, SmallVec};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::{Arc, OnceLock};
@@ -1443,26 +1444,36 @@ impl ExternalConditions {
         //      F_w_sky when alpha = 0
         let beta = tilt.to_radians();
 
+        // a number representing the high end of the expected count of shading objects,
+        // as a hint for e.g. smallvec to start using the heap for larger collections
+        const HIGH_EXPECTED_SHADING_COUNT_THRESHOLD: usize = 16;
+        type WindowShadingObjectGroup =
+            SmallVec<[WindowShadingObject; HIGH_EXPECTED_SHADING_COUNT_THRESHOLD]>;
+
         // unlike upstream Python, collecting straight to an f64 as there are never multiple diffuse factors to pick from
         let diffuse_factor: f64 = if window_shading.is_some() {
             // # Unpack window shading details
-            let mut overhang_depths_distances = vec![WindowShadingObject::Overhang {
-                depth: 0.0,
-                distance: 1.0,
-            }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut right_sidefin_depths_distances = vec![WindowShadingObject::SideFinRight {
-                depth: 0.0,
-                distance: 1.0,
-            }]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut left_sidefin_depths_distances = vec![WindowShadingObject::SideFinLeft {
-                depth: 0.0,
-                distance: 1.0,
-            }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut obstacle_heights_distances = vec![WindowShadingObject::Obstacle {
-                height: 0.0,
-                distance: 1.0,
-                transparency: 0.0,
-            }]; // [H,L,Trans]
+            let mut overhang_depths_distances: WindowShadingObjectGroup =
+                smallvec![WindowShadingObject::Overhang {
+                    depth: 0.0,
+                    distance: 1.0,
+                }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut right_sidefin_depths_distances: WindowShadingObjectGroup =
+                smallvec![WindowShadingObject::SideFinRight {
+                    depth: 0.0,
+                    distance: 1.0,
+                }]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut left_sidefin_depths_distances: WindowShadingObjectGroup =
+                smallvec![WindowShadingObject::SideFinLeft {
+                    depth: 0.0,
+                    distance: 1.0,
+                }]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut obstacle_heights_distances: WindowShadingObjectGroup =
+                smallvec![WindowShadingObject::Obstacle {
+                    height: 0.0,
+                    distance: 1.0,
+                    transparency: 0.0,
+                }]; // [H,L,Trans]
 
             if let Some(shading_objects) = window_shading {
                 for shading_object in shading_objects.iter() {
