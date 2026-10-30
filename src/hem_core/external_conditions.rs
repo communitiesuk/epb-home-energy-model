@@ -12,7 +12,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{smallvec, Array, SmallVec};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::{Arc, OnceLock};
@@ -1514,32 +1514,30 @@ impl ExternalConditions {
             let mut f_sh_dif: f64 = Default::default();
             let mut f_sh_ref: f64 = Default::default();
 
-            // #perform the diff shading calculation for each combination of overhangs and fins
-            for iteration_vec in [
-                overhang_depths_distances,
-                right_sidefin_depths_distances,
-                left_sidefin_depths_distances,
-                obstacle_heights_distances,
-            ]
-            .iter()
-            .multi_cartesian_product()
-            {
+            let pools: [&[WindowShadingObject]; 4] = [
+                &overhang_depths_distances,
+                &right_sidefin_depths_distances,
+                &left_sidefin_depths_distances,
+                &obstacle_heights_distances,
+            ];
+            let product = CopyCartesianProduct::<
+                WindowShadingObject,
+                HIGH_EXPECTED_SHADING_COUNT_THRESHOLD,
+            >::new(&pools);
+
+            // perform the diff shading calculation for each combination of overhangs and fins
+            for iteration in product {
                 let (
                     overhang_depth_distance,
                     right_sidefin_depth_distance,
                     left_sidefin_depth_distance,
                     obstacle_height_distance,
-                ) = (
-                    iteration_vec[0],
-                    iteration_vec[1],
-                    iteration_vec[2],
-                    iteration_vec[3],
-                );
+                ) = (iteration[0], iteration[1], iteration[2], iteration[3]);
                 let (overhang_depth, overhang_distance) =
                     if let WindowShadingObject::Overhang { depth, distance } =
                         overhang_depth_distance
                     {
-                        (*depth, *distance)
+                        (depth, distance)
                     } else {
                         unreachable!()
                     };
@@ -1547,7 +1545,7 @@ impl ExternalConditions {
                     if let WindowShadingObject::SideFinLeft { depth, distance } =
                         left_sidefin_depth_distance
                     {
-                        (*depth, *distance)
+                        (depth, distance)
                     } else {
                         unreachable!()
                     };
@@ -1555,7 +1553,7 @@ impl ExternalConditions {
                     if let WindowShadingObject::SideFinRight { depth, distance } =
                         right_sidefin_depth_distance
                     {
-                        (*depth, *distance)
+                        (depth, distance)
                     } else {
                         unreachable!()
                     };
@@ -1566,7 +1564,7 @@ impl ExternalConditions {
                         transparency,
                     } = obstacle_height_distance
                     {
-                        (*height, *distance, *transparency)
+                        (height, distance, transparency)
                     } else {
                         unreachable!()
                     };
@@ -1914,6 +1912,86 @@ impl AbsDiffEq<Self> for CalculatedDirectDiffuseTotalIrradiance {
                 (None, None) => true,
                 _ => false,
             }
+    }
+}
+
+// Cartesian product implementation that uses smallvec
+
+struct CopyCartesianProduct<'a, T: Copy, const STACK_LIMIT: usize>
+where
+    [usize; STACK_LIMIT]: Array<Item = usize>,
+    [T; STACK_LIMIT]: Array<Item = T>,
+{
+    pools: &'a [&'a [T]],
+    indices: SmallVec<[usize; STACK_LIMIT]>,
+    first: bool,
+}
+
+impl<'a, T: Copy, const STACK_LIMIT: usize> CopyCartesianProduct<'a, T, STACK_LIMIT>
+where
+    [usize; STACK_LIMIT]: Array<Item = usize>,
+    [T; STACK_LIMIT]: Array<Item = T>,
+{
+    pub fn new(pools: &'a [&'a [T]]) -> Self {
+        let mut indices = SmallVec::new();
+        for _ in 0..pools.len() {
+            indices.push(0);
+        }
+        Self {
+            pools,
+            indices,
+            first: true,
+        }
+    }
+}
+
+impl<'a, T: Copy, const STACK_LIMIT: usize> Iterator for CopyCartesianProduct<'a, T, STACK_LIMIT>
+where
+    [usize; STACK_LIMIT]: Array<Item = usize>,
+    [T; STACK_LIMIT]: Array<Item = T>,
+{
+    type Item = SmallVec<[T; STACK_LIMIT]>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pools.is_empty() || self.pools.iter().any(|p| p.is_empty()) {
+            return None;
+        }
+
+        if self.first {
+            self.first = false;
+        } else {
+            let mut i = self.indices.len() - 1;
+            loop {
+                self.indices[i] += 1;
+                if self.indices[i] < self.pools[i].len() {
+                    break;
+                }
+                self.indices[i] = 0;
+                if i == 0 {
+                    return None;
+                }
+                i -= 1;
+            }
+        }
+
+        let mut result = SmallVec::new();
+        for (pool_idx, &item_idx) in self.indices.iter().enumerate() {
+            result.push(self.pools[pool_idx][item_idx]);
+        }
+        Some(result)
+    }
+}
+
+fn main() {
+    let pool_a = [1, 2];
+    let pool_b = [10, 20];
+    let datasets: &[&[i32]] = &[&pool_a, &pool_b];
+
+    // Specify the layout parameters: type is i32, max stack budget is 4 dimensions
+    let product = CopyCartesianProduct::<i32, 4>::new(datasets);
+
+    for combination in product {
+        println!("{:?}", combination);
     }
 }
 
