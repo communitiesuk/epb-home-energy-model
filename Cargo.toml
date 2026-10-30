@@ -14,7 +14,6 @@ anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 arc-swap = "1.9.0"
 argmin = "0.11.0"
-arrayvec = "0.7.8"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.45"
@@ -44,6 +43,7 @@ serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_repr = "0.1.20"
 serde_with = { version = "3.21.0", features = ["json", "macros"] }
 serde_valid = "3.2.0"
+smallvec = "1.16.4"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
