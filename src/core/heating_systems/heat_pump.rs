@@ -1098,7 +1098,7 @@ impl HeatPumpTestData {
         design_flow_temp_op_cond: f64,
     ) -> anyhow::Result<f64> {
         // we never expect more than 10 design flow temperatures on a heat pump
-        let exer_eff_op_cond_list: ArrayVec<f64, 10> = self
+        let exer_eff_op_cond_list: ArrayVec<f64, MAX_EXPECTED_DESIGN_FLOW_TEMPERATURES> = self
             .design_flow_temps
             .iter()
             .map(|design_flow_temp| {
@@ -1228,7 +1228,7 @@ impl HeatPumpTestData {
         // TODO (from Python) The above implies that the TOL test temperature data may
         //       be needed if we change the weather data from that used in
         //       DAHPSE for SAP 2012/10.2
-        let therm_cap_op_cond =
+        let therm_cap_op_cond: ArrayVec<f64, MAX_EXPECTED_DESIGN_FLOW_TEMPERATURES> =
             self.design_flow_temps.iter().map(|design_flow_temp| {
                 let design_flow_temp_data = &self.test_data[design_flow_temp];
                 // Get the source and outlet temperatures from the coldest test record
@@ -1253,7 +1253,7 @@ impl HeatPumpTestData {
 
                     thermal_capacity_cld + (thermal_capacity_d - thermal_capacity_cld) * ((temp_diff_cld - temp_diff_op_cond) / (temp_diff_cld - temp_diff_d))
                 })
-            }).collect::<Result<Vec<f64>, BelowAbsoluteZeroError>>()?;
+            }).collect::<Result<_, BelowAbsoluteZeroError>>()?;
 
         // Interpolate between the values found for the different design flow temperatures
         let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
@@ -1317,6 +1317,9 @@ impl HeatPumpTestData {
         ))
     }
 }
+
+// the maximum count of design flow temperatures to allow for (when using stack-based lists)
+const MAX_EXPECTED_DESIGN_FLOW_TEMPERATURES: usize = 10;
 
 /// The list average_cap will be in the same order as the
 /// corresponding elements in self.__design_flow_temps. This behaviour
