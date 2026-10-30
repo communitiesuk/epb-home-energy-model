@@ -1686,7 +1686,7 @@ impl ExternalConditions {
                         .to_degrees();
                     // Sky view factor reduction
                     let f_w_ob = view_factor_sky_no_obstacles
-                        .min((((1. - (90. - angle_obst)) as f64).to_radians().sin()) * 0.5)
+                        .min(((1. - (90. - angle_obst)).to_radians().sin()) * 0.5)
                         * (1. - prop_above_obstacle)
                         * (1. - obstacle_transparency);
                     (view_factor_sky_no_obstacles - f_w_ob) / view_factor_sky_no_obstacles
