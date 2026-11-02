@@ -81,6 +81,7 @@ use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHe
 use crate::core::water_heat_demand::dhw_demand::{OutletType, ELECTRIC_SHOWERS_HWS_NAME};
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
+use crate::hem_core::external_conditions::ExternalConditionsDataMissingError;
 use crate::hem_core::simulation_time::{SimulationTime, HOURS_IN_DAY};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -108,6 +109,7 @@ use crate::input::{
 use crate::input_dependency_resolvers::{
     build_heat_battery_charging_dependency_graph, build_preheated_water_source_dependency_graph,
     topological_sort_heat_battery_charging, topological_sort_preheated_water_sources,
+    CircularDependencyError,
 };
 use crate::output::{
     Output, OutputCop, OutputCore, OutputHeatingCoolingSystem, OutputHotWaterSystems, OutputStatic,
@@ -144,6 +146,7 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Deref, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 
 /// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
@@ -162,7 +165,7 @@ fn control_from_input(
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
     obscure_error_reporter: &ObscureErrorReporter,
-) -> anyhow::Result<Controls> {
+) -> Result<Controls, BuildError> {
     let mut core: Vec<HeatSourceControl> = Default::default();
     let mut extra: IndexMap<ArcStr, Control> = Default::default();
 
@@ -170,40 +173,40 @@ fn control_from_input(
     // and the way the variants-struct crate works;
     // we should be able to improve it in time
     if let Some(control) = &control_input.hot_water_timer.as_ref() {
-        if let Some(ctrl) = single_control_from_details(
+        let ctrl = single_control_from_details(
             "hw timer",
             control,
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
             obscure_error_reporter,
-        )? {
-            core.push(HeatSourceControl::HotWaterTimer(ctrl));
-        }
+        )?;
+
+        core.push(HeatSourceControl::HotWaterTimer(ctrl));
     }
     if let Some(control) = &control_input.window_opening.as_ref() {
-        if let Some(ctrl) = single_control_from_details(
+        let ctrl = single_control_from_details(
             "window opening",
             control,
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
             obscure_error_reporter,
-        )? {
-            core.push(HeatSourceControl::WindowOpening(ctrl));
-        }
+        )?;
+
+        core.push(HeatSourceControl::WindowOpening(ctrl));
     }
     for (name, control) in &control_input.extra {
-        if let Some(ctrl) = single_control_from_details(
+        let ctrl = single_control_from_details(
             name,
             control,
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
             obscure_error_reporter,
-        )? {
-            extra.insert(name.to_string().into(), ctrl);
-        }
+        )?;
+
+        extra.insert(name.to_string().into(), ctrl);
     }
 
     Ok(Controls::new(core, extra))
@@ -216,7 +219,7 @@ fn single_control_from_details(
     simulation_time_iterator: &SimulationTimeIterator,
     control_input: &ControlInput,
     obscure_error_reporter: &ObscureErrorReporter,
-) -> anyhow::Result<Option<Control>> {
+) -> Result<Control, BuildError> {
     Ok(match details {
         ControlDetails::OnOffTimer {
             start_day,
@@ -234,7 +237,6 @@ fn single_control_from_details(
             Control::OnOffTime(
                 OnOffTimeControl::new(schedule, *start_day, *time_series_step).into(),
             )
-            .into()
         }
         ControlDetails::SetpointTimer {
             start_day,
@@ -253,8 +255,7 @@ fn single_control_from_details(
                 simulation_time_iterator.step_in_hours(),
             )
             .into(),
-        )
-        .into(),
+        ),
         ControlDetails::ChargeTarget {
             charge_level,
             external_sensor,
@@ -295,7 +296,13 @@ fn single_control_from_details(
                 };
                 // Ensure charge_level has the required length by appending the last value as many times as necessary
                 if charge_level_vec.len() < required_length {
-                    bail!("charge_level for control '{name}' has {} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days.", charge_level_vec.len());
+                    return Err(
+                        BuildError::InsufficientControlChargeLevelValuesForSimulation {
+                            name: name.into(),
+                            values_count: charge_level_vec.len(),
+                            required_length,
+                        },
+                    );
                 }
 
                 charge_level_vec
@@ -320,7 +327,6 @@ fn single_control_from_details(
                 )?
                 .into(),
             )
-            .into()
         }
         ControlDetails::OnOffCostMinimising {
             start_day,
@@ -337,8 +343,7 @@ fn single_control_from_details(
                 *time_on_daily,
             )?
             .into(),
-        )
-        .into(),
+        ),
         ControlDetails::CombinationTime { combination } => {
             // resolved controls needs to be: IndexMap<ArcStr, Control>
 
@@ -356,13 +361,15 @@ fn single_control_from_details(
                 external_conditions: Arc<ExternalConditions>,
                 simulation_time_iterator: &SimulationTimeIterator,
                 obscure_error_reporter: &ObscureErrorReporter,
-            ) -> anyhow::Result<IndexMap<ArcStr, Control>> {
+            ) -> Result<IndexMap<ArcStr, Control>, BuildError> {
                 let mut empty_set: IndexSet<ArcStr> = Default::default();
                 let visited = visited.unwrap_or(&mut empty_set);
                 let mut controls: IndexSet<ArcStr> = Default::default();
 
                 if visited.contains(current_key) {
-                    bail!("Error: Circular reference detected involving '{current_key}' in CombinationTimeControl. Exiting program.")
+                    return Err(BuildError::CircularReferenceDetectedInCombinationControl(
+                        current_key.into(),
+                    ));
                 }
                 visited.insert(current_key.into());
 
@@ -392,10 +399,12 @@ fn single_control_from_details(
 
                 let control_instances = controls
                     .iter()
-                    .filter_map(|control_name| {
+                    .map(|control_name| {
                         let control_details = match control_input.get(control_name) {
                             Some(control_details) => control_details,
-                            None => return Some(Err(anyhow!("There was a reference to a control with name '{control_name}' that was not provided.")))
+                            None => {
+                                return Err(BuildError::BadControlReference(control_name.clone()))
+                            }
                         };
                         let control = match single_control_from_details(
                             control_name,
@@ -406,16 +415,16 @@ fn single_control_from_details(
                             obscure_error_reporter,
                         ) {
                             Ok(c) => c,
-                            Err(_) => return Some(Err(anyhow!("The control name '{control_name}' refers to a control that cannot be included as part of a combination.")))
+                            Err(_) => {
+                                return Err(BuildError::BadControlReferenceForCombinationControl(
+                                    control_name.clone(),
+                                ));
+                            }
                         };
-                        control.map(|control| {
-                            Ok((
-                                control_name.clone(),
-                                control,
-                            ))
-                        })
+
+                        Ok((control_name.clone(), control))
                     })
-                    .try_collect()?;
+                    .collect::<Result<_, _>>()?;
 
                 Ok(control_instances)
             }
@@ -447,7 +456,6 @@ fn single_control_from_details(
             Control::CombinationTime(
                 CombinationTimeControl::new(combination.clone(), resolved_controls)?.into(),
             )
-            .into()
         }
         ControlDetails::RangeTimer {
             start_day,
@@ -504,7 +512,7 @@ fn single_control_from_details(
                 *time_series_step,
                 advanced_start.unwrap_or(0.0f64).into(),
             )?;
-            Control::RangeTime(range_time_control.into()).into()
+            Control::RangeTime(range_time_control.into())
         }
         ControlDetails::ChargeTarget {
             charge_level: charge_level_input,
@@ -553,7 +561,13 @@ fn single_control_from_details(
                 // A shorter sequence is most likely an input error, so reject it. A single
                 // value (handled above) is broadcast to every day.
                 if charge_level.len() < required_length {
-                    bail!("charge_level for control '{name}' has {} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days.", charge_level.len());
+                    return Err(
+                        BuildError::InsufficientControlChargeLevelValuesForSimulation {
+                            name: name.into(),
+                            required_length,
+                            values_count: charge_level.len(),
+                        },
+                    );
                 }
             }
 
@@ -565,11 +579,11 @@ fn single_control_from_details(
                     simulation_time_iterator,
                     control_input,
                     obscure_error_reporter,
-                )?.ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which could not be built"))?).into(),
+                )?).into(),
                 ChargeTargetScheduleOrControlReference::Schedule(schedule) => reject_nulls(expand_boolean_schedule(schedule))?.into(),
             };
 
-            Some(Control::Charge(Arc::new(ChargeControl::new(
+            Control::Charge(Arc::new(ChargeControl::new(
                 logic_type,
                 charge_time_control,
                 simulation_time_iterator,
@@ -582,7 +596,7 @@ fn single_control_from_details(
                 external_sensor.clone(),
                 Some(*charge_calc_time),
                 obscure_error_reporter.clone(),
-            )?)))
+            )?))
         }
     })
 }
@@ -593,46 +607,39 @@ fn get_referenced_control(
     control_input: &ControlInput,
     control_name: &ArcStr,
     obscure_error_reporter: &ObscureErrorReporter,
-) -> anyhow::Result<Control> {
-    // TODO avoid circular references
+) -> Result<Control, BuildError> {
     let control_details = match control_input.get(control_name) {
         Some(control_details) => control_details,
-        None => bail!(
-            "There was a reference to a control with name '{control_name}' that was not provided."
-        ),
+        None => {
+            return Err(BuildError::BadControlReference(control_name.clone()));
+        }
     };
-    let control = single_control_from_details(
+
+    single_control_from_details(
         control_name,
         control_details,
         external_conditions.clone(),
         simulation_time_iterator,
         control_input,
         obscure_error_reporter,
-    )?;
-
-    if control.is_none() {
-        // TODO look into why this is an Option<>
-        // is it possible for this to be None?
-        bail!("Referenced control '{control_name}' could not be read");
-    }
-
-    Ok(control.unwrap())
+    )
 }
 
 fn init_resistance_or_uvalue_from_data(
     thermal_resistance_construction: Option<f64>,
     u_value: Option<f64>,
     pitch: f64,
-) -> anyhow::Result<f64> {
+    building_element_name: &ArcStr,
+) -> Result<f64, BuildError> {
     Ok(
         if let Some(thermal_resistance_construction) = thermal_resistance_construction {
             thermal_resistance_construction
         } else {
             convert_uvalue_to_resistance(
                 u_value.ok_or_else(|| {
-                    anyhow!(
-                    "Neither thermal_resistance_construction nor u_value were provided for one of the building element inputs."
-                )
+                    BuildError::UValueOrThermalResistanceConstructionNotProvided {
+                        building_element: building_element_name.clone(),
+                    }
                 })?,
                 pitch,
             )
@@ -643,20 +650,29 @@ fn init_resistance_or_uvalue_from_data(
 fn init_resistance_or_uvalue_from_input_struct(
     data: &UValueInput,
     pitch: f64,
-) -> anyhow::Result<f64> {
+    building_element_name: &ArcStr,
+) -> Result<f64, BuildError> {
     let (thermal_resistance_construction, u_value) = match data {
         UValueInput::UValue { u_value, .. } => (None, Some(*u_value)),
         UValueInput::ThermalResistanceConstruction {
             thermal_resistance_construction,
         } => (Some(*thermal_resistance_construction), None),
     };
-    init_resistance_or_uvalue_from_data(thermal_resistance_construction, u_value, pitch)
+    init_resistance_or_uvalue_from_data(
+        thermal_resistance_construction,
+        u_value,
+        pitch,
+        building_element_name,
+    )
 }
 
 /// Return thermal resistance of construction (thermal_resistance_construction) based on alternative inputs
 ///
 /// User will either provide thermal_resistance_construction directly or provide u_value which needs to be converted
-fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f64> {
+fn init_resistance_or_uvalue(
+    element: &BuildingElementInput,
+    element_name: &ArcStr,
+) -> Result<f64, BuildError> {
     fn params_from_u_value_input_and_pitch(
         u_value_input: &UValueInput,
         pitch: f64,
@@ -698,7 +714,12 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
             ..
         } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
     };
-    init_resistance_or_uvalue_from_data(thermal_resistance_construction, u_value, pitch)
+    init_resistance_or_uvalue_from_data(
+        thermal_resistance_construction,
+        u_value,
+        pitch,
+        element_name,
+    )
 }
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
@@ -747,9 +768,9 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         None,
     )?;
 
-    fn calc_heat_loss(data: &BuildingElementInput) -> anyhow::Result<f64> {
+    fn calc_heat_loss(data: &BuildingElementInput, element_name: &ArcStr) -> anyhow::Result<f64> {
         // Calculate thermal_resistance_construction from u_value if only the latter has been provided
-        let thermal_resistance_construction = init_resistance_or_uvalue(data)?;
+        let thermal_resistance_construction = init_resistance_or_uvalue(data, element_name)?;
         let r_si = match data.pitch() {
             PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => R_SI_HORIZONTAL,
             ..PITCH_LIMIT_HORIZ_CEILING => R_SI_UPWARDS,
@@ -858,8 +879,8 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         // Calculate fabric heat loss and total floor area
         let total_fabric_heat_loss = FSum::with_all(
             zone.building_elements
-                .values()
-                .map(calc_heat_loss)
+                .iter()
+                .map(|(element_name, element)| calc_heat_loss(element, element_name))
                 .try_collect::<f64, Vec<f64>, anyhow::Error>()?,
         )
         .value();
@@ -902,6 +923,12 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         htc_map,
         _hlp_map: hlp_map,
     })
+}
+
+#[derive(Debug, Error)]
+pub enum CalcHtcHlpError {
+    #[error("Control not found in provided controls: {0}")]
+    ControlNotFound(ArcStr),
 }
 
 pub struct HtcHlpCalculation {
@@ -955,12 +982,12 @@ pub struct Corpus {
 }
 
 impl Corpus {
-    pub fn from_inputs(
+    pub(crate) fn from_inputs(
         input: Arc<Input>,
         external_conditions: Option<&ExternalConditions>,
         tariff_file_path: Option<&str>,
         output_options: &OutputOptions,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, BuildError> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
         let external_conditions = Arc::new(match external_conditions {
@@ -1450,7 +1477,7 @@ impl Corpus {
             if let HotWaterSource::PreHeated(source) = heat_source {
                 pre_heated_water_sources.insert(source_name.to_string().into(), source);
             } else {
-                bail!("Pre-heated water sources must be storage tanks");
+                return Err(BuildError::PreheatedWaterSourceDidNotReferenceTank);
             }
             hot_water_source_name_for_service.extend(
                 preheated_source_names_for_service
@@ -4508,7 +4535,7 @@ fn zone_from_input(
     ventilation_shield_class: &VentilationShieldClass,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<Zone> {
+) -> Result<Zone, BuildError> {
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
 
@@ -4529,10 +4556,9 @@ fn zone_from_input(
             .cloned()
             .collect_vec();
         if !h_overassigned.is_empty() {
-            bail!(
-                "Invalid input: SpaceHeatSystem ({}) has been assigned to more than one Zone",
-                h_overassigned.into_iter().join(", ")
-            )
+            return Err(BuildError::SpaceHeatSystemReferencedByMultipleZones(
+                h_overassigned.into_iter().join(", ").into(),
+            ));
         }
     }
 
@@ -4555,10 +4581,9 @@ fn zone_from_input(
             .cloned()
             .collect_vec();
         if !c_overassigned.is_empty() {
-            bail!(
-                "Invalid input: SpaceCoolSystem ({}) has been assigned to more than one Zone",
-                c_overassigned.into_iter().join(", ")
-            )
+            return Err(BuildError::SpaceCoolSystemReferencedByMultipleZones(
+                c_overassigned.into_iter().join(", ").into(),
+            ));
         }
     }
 
@@ -4580,6 +4605,7 @@ fn zone_from_input(
                     element_name.into(),
                     building_element_from_input(
                         el,
+                        element_name,
                         external_conditions.clone(),
                         controls,
                         ventilation_shield_class,
@@ -4597,6 +4623,10 @@ fn zone_from_input(
         print_heat_balance,
         simulation_time_iterator,
     )
+    .map_err(|error| BuildError::DomainModelBuildError {
+        domain_model: "zone",
+        error: error.into(),
+    })
 }
 
 #[allow(clippy::type_complexity)]
@@ -4725,11 +4755,12 @@ impl CompletedVentilationLeaks {
 
 fn building_element_from_input(
     input: &BuildingElementInput,
+    element_name: &ArcStr,
     external_conditions: Arc<ExternalConditions>,
     controls: &Controls,
     ventilation_shield_class: &VentilationShieldClass,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<Arc<BuildingElement>> {
+) -> Result<Arc<BuildingElement>, BuildError> {
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
@@ -4760,7 +4791,7 @@ fn building_element_from_input(
                 is_unheated_pitched_roof,
                 *pitch,
                 *solar_absorption_coeff,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
                 *areal_heat_capacity,
                 *mass_distribution_class,
                 *orientation,
@@ -4786,7 +4817,7 @@ fn building_element_from_input(
 
             BuildingElement::Transparent(BuildingElementTransparent::new(
                 *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
                 Some(*orientation),
                 *g_value,
                 *frame_area_fraction,
@@ -4833,7 +4864,7 @@ fn building_element_from_input(
                 if let Control::SetpointTime(setpoint_control) = controls.get_with_string(control_smart_air_brick).ok_or_else(|| anyhow!("Smart air brick control referenced with name '{control_smart_air_brick}' not provided"))? {
                     Some(setpoint_control)
                 } else {
-                    bail!("Referenced smart brick control '{control_smart_air_brick}' was expected to refer to a setpoint time control");
+                    return Err(BuildError::IncompatibleControl(format!("Referenced smart brick control '{control_smart_air_brick}' was expected to refer to a setpoint time control").into()));
                 }
             } else {
                 None
@@ -4872,7 +4903,7 @@ fn building_element_from_input(
             BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
                 *area,
                 *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
                 *areal_heat_capacity,
                 *mass_distribution_class,
                 external_conditions,
@@ -4889,7 +4920,7 @@ fn building_element_from_input(
             BuildingElementAdjacentUnconditionedSpaceSimple::new(
                 *area,
                 *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
                 *thermal_resistance_unconditioned_space,
                 *areal_heat_capacity,
                 *mass_distribution_class,
@@ -4909,7 +4940,7 @@ fn building_element_from_input(
             BuildingElement::PartyWall(BuildingElementPartyWall::new(
                 *area,
                 *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
                 PartyWallCavityType::from(*party_wall_cavity_data),
                 party_wall_cavity_data.party_wall_lining_type(),
                 party_wall_cavity_data.thermal_resistance_cavity(),
@@ -7562,6 +7593,63 @@ impl AndReturn {
     }
 }
 
+/// An error encountered when building the corpus.
+#[derive(Debug, Error)]
+pub enum BuildError {
+    #[error(transparent)]
+    Fallback(#[from] anyhow::Error),
+    #[error("{0}")]
+    PreheatedWaterSourceCircularDependency(ArcStr),
+    #[error("Preheated water sources in the input must reference either a storage tank or a smart hot water tank."
+    )]
+    PreheatedWaterSourceDidNotReferenceTank,
+    #[error("charge_level for control '{name}' has {values_count} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days."
+    )]
+    InsufficientControlChargeLevelValuesForSimulation {
+        name: ArcStr,
+        required_length: usize,
+        values_count: usize,
+    },
+    #[error("Circular control references detected in combination control involving control with name '{0}'."
+    )]
+    CircularReferenceDetectedInCombinationControl(ArcStr),
+    #[error("A reference '{0}' to a control was found that is not defined in the input controls section."
+    )]
+    BadControlReference(ArcStr),
+    #[error("A reference '{0}' to a control was found within a combination control input that is not defined in the input controls section."
+    )]
+    BadControlReferenceForCombinationControl(ArcStr),
+    #[error("Either a u-value or a thermal resistance construction was expected to be provided for building element '{building_element}'."
+    )]
+    UValueOrThermalResistanceConstructionNotProvided { building_element: ArcStr },
+    #[error("Values are missing for the field '{0}' in the external conditions provided.")]
+    ExternalConditionsFieldValuesMissing(&'static str),
+    #[error("The space heat system(s) '{0}' was referenced by systems in multiple zones.")]
+    SpaceHeatSystemReferencedByMultipleZones(ArcStr),
+    #[error("The space heat system(s) '{0}' was referenced by systems in multiple zones.")]
+    SpaceCoolSystemReferencedByMultipleZones(ArcStr),
+    #[error("Incompatible control provided: {0}.")]
+    IncompatibleControl(ArcStr),
+    #[error("Error when building HEM {domain_model} model: {error}")]
+    DomainModelBuildError {
+        domain_model: &'static str,
+        #[source]
+        error: Box<dyn std::error::Error + Send + Sync>,
+    },
+}
+
+impl From<CircularDependencyError> for BuildError {
+    fn from(err: CircularDependencyError) -> Self {
+        Self::PreheatedWaterSourceCircularDependency(err.as_arc_str())
+    }
+}
+
+impl From<ExternalConditionsDataMissingError> for BuildError {
+    fn from(err: ExternalConditionsDataMissingError) -> Self {
+        Self::ExternalConditionsFieldValuesMissing(err.field)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7570,7 +7658,6 @@ mod tests {
         HeatSourceWet as HeatSourceWetInput, HotWaterSourceDetails, Input,
         WasteWaterHeatRecoveryDetails,
     };
-    use crate::input_dependency_resolvers::CircularDependencyError;
     use rstest::{fixture, rstest};
     use serde_json::{json, Value};
     use serde_valid::Validate;
@@ -7819,7 +7906,12 @@ mod tests {
     fn build_project(input: Input) -> anyhow::Result<Corpus> {
         input.validate()?;
 
-        Corpus::from_inputs(Arc::new(input), None, None, &OutputOptions::default())
+        Ok(Corpus::from_inputs(
+            Arc::new(input),
+            None,
+            None,
+            &OutputOptions::default(),
+        )?)
     }
 
     #[rstest]
@@ -8000,7 +8092,10 @@ mod tests {
             &OutputOptions::default(),
         );
 
-        assert!(result.unwrap_err().is::<CircularDependencyError>());
+        assert!(matches!(
+            result.unwrap_err(),
+            BuildError::PreheatedWaterSourceCircularDependency(_)
+        ));
     }
 
     /// Test that chains of dependencies work regardless of initialization order

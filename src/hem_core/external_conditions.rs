@@ -16,6 +16,7 @@ use smallvec::{smallvec, Array, SmallVec};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::{Arc, OnceLock};
+use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2123,7 +2124,7 @@ impl RelativeEq for DiffuseBreakdown {
 pub fn create_external_conditions(
     input: ExternalConditionsInput,
     simulation_time: &SimulationTimeIterator,
-) -> anyhow::Result<ExternalConditions> {
+) -> Result<ExternalConditions, ExternalConditionsDataMissingError> {
     // TODO (from Python) Some inputs are not currently used, so set to None here rather
     //       than requiring them in input file.
     // TODO (from Python) Read timezone from input file. For now, set timezone to 0 (GMT)
@@ -2133,18 +2134,28 @@ pub fn create_external_conditions(
 
     Ok(ExternalConditions::new(
         simulation_time,
-        input.air_temperatures.ok_or_else(|| anyhow!("Air temperatures for external conditions were not available when expected"))?,
-        input.wind_speeds.ok_or_else(|| anyhow!("Wind speeds for external conditions were not available when expected"))?,
-        input.wind_directions.ok_or_else(|| anyhow!("Wind directions for external conditions were not available when expected"))?,
+        input
+            .air_temperatures
+            .ok_or_else(|| missing_data_error("air temperature"))?,
+        input.wind_speeds.ok_or(missing_data_error("wind speeds"))?,
+        input
+            .wind_directions
+            .ok_or_else(|| missing_data_error("wind directions"))?,
         input
             .diffuse_horizontal_radiation
-            .ok_or_else(|| anyhow!("Diffuse horizontal radiation values for external conditions were not available when expected"))?,
-        input.direct_beam_radiation.ok_or_else(|| anyhow!("Direct beam radiation values for external conditions were not available when expected"))?,
+            .ok_or_else(|| missing_data_error("diffuse horizontal radiation"))?,
+        input
+            .direct_beam_radiation
+            .ok_or_else(|| missing_data_error("direct beam radiation"))?,
         input
             .solar_reflectivity_of_ground
-            .ok_or_else(|| anyhow!("Solar reflectivity of ground values for external conditions were not available when expected"))?,
-        input.latitude.ok_or_else(|| anyhow!("Latitude for external conditions were not available when expected"))?,
-        input.longitude.ok_or_else(|| anyhow!("Longitude for external conditions were not available when expected"))?,
+            .ok_or_else(|| missing_data_error("solar reflectivity of ground"))?,
+        input
+            .latitude
+            .ok_or_else(|| missing_data_error("latitude"))?,
+        input
+            .longitude
+            .ok_or_else(|| missing_data_error("longitude"))?,
         0,
         0,
         Some(365),
@@ -2155,6 +2166,16 @@ pub fn create_external_conditions(
         dir_beam_conversion,
         input.shading_segments,
     ))
+}
+
+fn missing_data_error(field: &'static str) -> ExternalConditionsDataMissingError {
+    ExternalConditionsDataMissingError { field }
+}
+
+#[derive(Debug, Error)]
+#[error("No values for the '{field}' field in the external conditions input were present when expected.")]
+pub struct ExternalConditionsDataMissingError {
+    pub field: &'static str,
 }
 
 fn init_direct_beam_radiation(

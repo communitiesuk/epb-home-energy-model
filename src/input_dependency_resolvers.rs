@@ -100,6 +100,12 @@ pub(crate) fn topological_sort_heat_battery_charging<T: Clone>(
 #[error("Circular dependency detected in {0}")]
 pub(crate) struct CircularDependencyError(ArcStr);
 
+impl CircularDependencyError {
+    pub(crate) fn as_arc_str(&self) -> ArcStr {
+        self.0.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

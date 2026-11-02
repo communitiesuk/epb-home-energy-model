@@ -328,7 +328,7 @@ pub fn run_project(
                 detailed_output_heating_cooling: bool,
             ) -> anyhow::Result<Corpus> {
                 let output_options = OutputOptions { print_heat_balance, detailed_output_heating_cooling };
-                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)
+                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options).map_err(|e| anyhow!(e))
             }
 
             build_corpus(input.clone(), &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
