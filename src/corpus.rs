@@ -4073,59 +4073,19 @@ fn internal_gains_from_input(
     total_floor_area: f64,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<InternalGainsCollection> {
-    let mut gains_collection = InternalGainsCollection::from([]);
-    if let Some(internal_gains) = input.total_internal_gains.as_ref() {
-        gains_collection.insert(
-            "total_internal_gains".into(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-    if let Some(internal_gains) = input.metabolic_gains.as_ref() {
-        gains_collection.insert(
-            "metabolic_gains".into(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-    if let Some(internal_gains) = input.evaporative_losses.as_ref() {
-        gains_collection.insert(
-            "evaporative_losses".into(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-    if let Some(internal_gains) = input.cold_water_losses.as_ref() {
-        gains_collection.insert(
-            "coldwaterlosses".into(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-    if let Some(internal_gains) = input.other.as_ref() {
-        gains_collection.insert(
-            "other".into(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-
-    Ok(gains_collection)
+    input
+        .iter()
+        .map(|(gains_name, gains_details)| {
+            Ok((
+                gains_name.clone(),
+                Gains::Internal(internal_gains_from_details(
+                    gains_details,
+                    total_floor_area,
+                    simulation_time_iterator,
+                )?),
+            ))
+        })
+        .collect::<Result<_, _>>()
 }
 
 fn internal_gains_from_details(

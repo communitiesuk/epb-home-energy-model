@@ -1030,30 +1030,7 @@ fn validate_air_temperatures(
     }
 }
 
-#[skip_serializing_none]
-#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
-pub(crate) struct InternalGains {
-    #[serde(alias = "total internal gains")]
-    #[validate]
-    pub(crate) total_internal_gains: Option<InternalGainsDetails>,
-
-    #[serde(rename = "metabolic gains")]
-    #[validate]
-    pub(crate) metabolic_gains: Option<InternalGainsDetails>,
-
-    #[serde(rename = "EvaporativeLosses")]
-    #[validate]
-    pub(crate) evaporative_losses: Option<InternalGainsDetails>,
-
-    #[serde(rename = "ColdWaterLosses")]
-    #[validate]
-    pub(crate) cold_water_losses: Option<InternalGainsDetails>,
-
-    #[validate]
-    pub(crate) other: Option<InternalGainsDetails>,
-}
+pub(crate) type InternalGains = IndexMap<ArcStr, InternalGainsDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -11538,7 +11515,7 @@ mod tests {
             }))
             .unwrap();
 
-            assert!(internal_gains.cold_water_losses.is_some());
+            assert!(internal_gains.contains_key("ColdWaterLosses"));
         }
 
         #[rstest]
@@ -11552,7 +11529,7 @@ mod tests {
             }))
             .unwrap();
 
-            assert!(internal_gains.evaporative_losses.is_some());
+            assert!(internal_gains.contains_key("EvaporativeLosses"));
         }
 
         #[rstest]
@@ -11562,7 +11539,7 @@ mod tests {
             }))
             .unwrap();
 
-            assert!(internal_gains.metabolic_gains.is_some());
+            assert!(internal_gains.contains_key("metabolic gains"));
         }
 
         #[rstest]
@@ -11572,7 +11549,7 @@ mod tests {
             )
             .unwrap();
 
-            assert!(internal_gains.other.is_some());
+            assert!(internal_gains.contains_key("other"));
         }
 
         #[rstest]
@@ -11585,7 +11562,7 @@ mod tests {
                 }
             }))
             .unwrap();
-            assert!(internal_gains.total_internal_gains.is_some());
+            assert!(internal_gains.contains_key("total internal gains"));
 
             let internal_gains: InternalGains = serde_json::from_value(json!({
                 "total_internal_gains": {
@@ -11595,7 +11572,7 @@ mod tests {
                 }
             }))
             .unwrap();
-            assert!(internal_gains.total_internal_gains.is_some());
+            assert!(internal_gains.contains_key("total_internal_gains"));
         }
     }
 
