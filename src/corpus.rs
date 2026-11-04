@@ -4426,14 +4426,14 @@ fn schedule_event_from_input(
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
 
-    let offset = if let Some(event_schedules_start_day) = event_schedules_start_day {
-        simulation_time_iterator.time_series_idx(
-            event_schedules_start_day,
-            simulation_time_iterator.step_in_hours(),
-        )?
-    } else {
-        0
-    };
+    let offset = event_schedules_start_day
+        .map(|event_schedules_start_day| {
+            simulation_time_iterator.time_series_idx(
+                event_schedules_start_day,
+                simulation_time_iterator.step_in_hours(),
+            )
+        })
+        .transpose()?;
 
     expand_events(
         events_input
