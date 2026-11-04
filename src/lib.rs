@@ -33,7 +33,7 @@ use crate::read_weather_file::{
 };
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
-use arcstr::ArcStr;
+pub use arcstr::ArcStr;
 use convert_case::{Case, Casing};
 use csv::{Terminator, WriterBuilder};
 use erased_serde::Serialize as ErasedSerialize;
