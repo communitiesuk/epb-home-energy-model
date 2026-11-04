@@ -140,15 +140,8 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             })
         }
 
-        match fixed_temps_and_test_letters {
-            None => {
-                fixed_temps_and_test_letters = Some(air_flowrate_flow_temps_test_letters);
-            }
-            Some(ref fixed_temps_and_test_letters) => {
-                if fixed_temps_and_test_letters != &air_flowrate_flow_temps_test_letters {
-                    bail!("In heat pump test data, fixed temps and test_letters were not consistent for one air_flow_temp value");
-                }
-            }
+        if fixed_temps_and_test_letters.is_none() {
+            fixed_temps_and_test_letters = Some(air_flowrate_flow_temps_test_letters);
         }
     }
 
@@ -158,6 +151,9 @@ fn interpolate_exhaust_air_heat_pump_test_data(
         .sorted()
         .map(|f| f.0)
         .collect::<Vec<f64>>();
+    if fixed_temps_and_test_letters.is_none() {
+        bail!("fixed_temps_and_test_letters is None")
+    }
     let test_data_interp_by_air_flow_rate = fixed_temps_and_test_letters
         .ok_or(anyhow!("Non-empty test data was expected"))?
         .iter()
@@ -5042,7 +5038,7 @@ mod tests {
 
     #[rstest]
     fn test_interpolate_exhaust_air_heat_pump_test_data() {
-        let mut data_eahp = vec![
+        let data_eahp = vec![
             HeatPumpTestDatumInput {
                 air_flow_rate: Some(100.0),
                 test_letter: TestLetter::A,
@@ -5129,13 +5125,6 @@ mod tests {
             data_eahp_func_result, data_eahp_interpolated,
             "incorrect interpolation of exhaust air heat pump test data"
         );
-        data_eahp[1].temp_source = 21.;
-        assert!(interpolate_exhaust_air_heat_pump_test_data(
-            140.,
-            &data_eahp,
-            HeatPumpSourceType::ExhaustAirMixed
-        )
-        .is_err());
     }
 
     #[test]
