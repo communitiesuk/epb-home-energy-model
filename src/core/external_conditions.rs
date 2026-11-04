@@ -1846,7 +1846,7 @@ impl ExternalConditions {
     }
 
     /// Expands window shading reveals into more specific definitions for overhang and sides.
-    fn window_shading_expand_reveals(
+    pub fn window_shading_expand_reveals(
         window_shading: &[WindowShadingObject],
     ) -> Vec<WindowShadingObject> {
         let mut window_shading_expanded = vec![];
