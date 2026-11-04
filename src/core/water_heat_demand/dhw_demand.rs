@@ -28,6 +28,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use serde::Deserialize;
 use std::sync::Arc;
 
 pub(crate) const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
@@ -97,7 +98,7 @@ impl TappingPoint<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
 pub enum OutletType {
     Shower,
     Bath,
