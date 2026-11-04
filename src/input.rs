@@ -1224,6 +1224,10 @@ impl EnergySupplyDetails {
             tariff_export: None,
         }
     }
+
+    pub fn fuel(&self) -> FuelType {
+        self.fuel
+    }
 }
 
 fn validate_threshold_value_fractions(
