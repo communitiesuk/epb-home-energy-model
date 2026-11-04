@@ -49,7 +49,7 @@ use crate::core::heating_systems::storage_tank::{
 };
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::material_properties::WATER;
-use crate::core::pipework::Pipework;
+use crate::core::pipework::{InvalidPipeworkInput, Pipework};
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
     ScheduleEvent, TypedScheduleEvent,
@@ -403,7 +403,9 @@ fn single_control_from_details(
                         let control_details = match control_input.get(control_name) {
                             Some(control_details) => control_details,
                             None => {
-                                return Err(BuildError::BadControlReference(control_name.clone()))
+                                return Err(BuildError::BadControlReference(
+                                    control_name.to_string(),
+                                ))
                             }
                         };
                         let control = match single_control_from_details(
@@ -417,7 +419,7 @@ fn single_control_from_details(
                             Ok(c) => c,
                             Err(_) => {
                                 return Err(BuildError::BadControlReferenceForCombinationControl(
-                                    control_name.clone(),
+                                    control_name.to_string(),
                                 ));
                             }
                         };
@@ -445,9 +447,11 @@ fn single_control_from_details(
                 .into_iter()
                 .map(|(name, control)| {
                     anyhow::Ok((
-                        name,
+                        name.clone(),
                         Option::<TimeControl>::from(control).ok_or_else(|| {
-                            anyhow!("Provided control type not expressible as TimeControl")
+                            BuildError::IncompatibleControl(format!(
+                                "Provided control type '{name}' not expressible as TimeControl"
+                            ))
                         })?,
                     ))
                 })
@@ -478,7 +482,7 @@ fn single_control_from_details(
                     )?;
                     ScheduleOrSetpointControl::Control(
                         Option::<ControlSetPoint>::from(control).ok_or_else(|| {
-                            anyhow!("Control for a range timer needs to be a setpoint control")
+                            BuildError::IncompatibleControl(format!("Control '{control_name}' for a range timer needs to be a setpoint control."))
                         })?,
                     )
                 }
@@ -498,7 +502,7 @@ fn single_control_from_details(
                     )?;
                     ScheduleOrSetpointControl::Control(
                         Option::<ControlSetPoint>::from(control).ok_or_else(|| {
-                            anyhow!("Control for a range timer needs to be a setpoint control")
+                            BuildError::IncompatibleControl(format!("Control '{control_name}' for a range timer needs to be a setpoint control."))
                         })?,
                     )
                 }
@@ -572,15 +576,24 @@ fn single_control_from_details(
             }
 
             let charge_time_control: ScheduleOrOnOffControl = match schedule_or_control {
-                ChargeTargetScheduleOrControlReference::ChargeTimeControl(control_reference) => OnOffControl::from(single_control_from_details(
-                    name,
-                    control_input.get(control_reference.as_str()).ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which is not defined"))?,
-                    external_conditions.clone(),
-                    simulation_time_iterator,
-                    control_input,
-                    obscure_error_reporter,
-                )?).into(),
-                ChargeTargetScheduleOrControlReference::Schedule(schedule) => reject_nulls(expand_boolean_schedule(schedule))?.into(),
+                ChargeTargetScheduleOrControlReference::ChargeTimeControl(control_reference) => {
+                    OnOffControl::from(single_control_from_details(
+                        name,
+                        control_input
+                            .get(control_reference.as_str())
+                            .ok_or_else(|| {
+                                BuildError::BadControlReference(control_reference.to_string())
+                            })?,
+                        external_conditions.clone(),
+                        simulation_time_iterator,
+                        control_input,
+                        obscure_error_reporter,
+                    )?)
+                    .into()
+                }
+                ChargeTargetScheduleOrControlReference::Schedule(schedule) => {
+                    reject_nulls(expand_boolean_schedule(schedule))?.into()
+                }
             };
 
             Control::Charge(Arc::new(ChargeControl::new(
@@ -611,7 +624,7 @@ fn get_referenced_control(
     let control_details = match control_input.get(control_name) {
         Some(control_details) => control_details,
         None => {
-            return Err(BuildError::BadControlReference(control_name.clone()));
+            return Err(BuildError::BadControlReference(control_name.to_string()));
         }
     };
 
@@ -638,7 +651,7 @@ fn init_resistance_or_uvalue_from_data(
             convert_uvalue_to_resistance(
                 u_value.ok_or_else(|| {
                     BuildError::UValueOrThermalResistanceConstructionNotProvided {
-                        building_element: building_element_name.clone(),
+                        building_element: building_element_name.to_string(),
                     }
                 })?,
                 pitch,
@@ -1083,13 +1096,13 @@ impl Corpus {
             .map(|name| {
                 let control = controls
                     .get_with_string(name.as_str())
-                    .ok_or_else(|| anyhow!("Smart air brick control not found: {name}"));
+                    .ok_or_else(|| BuildError::BadControlReference(name.to_string()));
 
                 if let Ok(Control::SetpointTime(control)) = control {
                     Ok(control)
                 } else {
-                    Err(anyhow!(
-                        "Smart air brick control must be a setpoint time control"
+                    Err(BuildError::IncompatibleControl(
+                        "Smart air brick control must be a setpoint time control.".into(),
                     ))
                 }
             })
@@ -1132,7 +1145,7 @@ impl Corpus {
 
         let zones: IndexMap<ArcStr, Arc<Zone>> = zone_processing_order
             .iter()
-            .map(|zone_name| -> anyhow::Result<(ArcStr, Arc<Zone>)> {
+            .map(|zone_name| -> Result<(ArcStr, Arc<Zone>), BuildError> {
                 let zone = &input.zone[zone_name];
                 Ok((zone_name.clone(), {
                     let zone_for_corpus = zone_from_input(
@@ -1152,7 +1165,7 @@ impl Corpus {
                     Arc::new(zone_for_corpus)
                 }))
             })
-            .collect::<anyhow::Result<_>>()?;
+            .collect::<Result<_, _>>()?;
 
         let energy_supply_conn_unmet_demand_zone = set_up_energy_supply_unmet_demand_zones(
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
@@ -1337,7 +1350,7 @@ impl Corpus {
             };
             let heat_source_wet_name = name.clone();
             let heat_source_wet = heat_sources_wet.get(&heat_source_wet_name).ok_or_else(|| {
-                anyhow!("HeatBattery {battery_name} references unknown HeatSourceWet {heat_source_wet_name}")
+                BuildError::BadHeatSourceWetReference(heat_source_wet_name.to_string())
             })?;
             let service_name = format!("{heat_source_wet_name}_pcm_charging: {battery_name}");
 
@@ -3952,7 +3965,7 @@ fn energy_supply_from_input(
     tariff_file_path: Option<&str>,
     tariff_data: Option<Arc<TariffData>>,
     external_conditions: Arc<ExternalConditions>,
-) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
+) -> Result<Arc<RwLock<EnergySupply>>, BuildError> {
     Ok(Arc::new(RwLock::new({
         let mut builder =
             EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
@@ -4088,13 +4101,17 @@ fn internal_gains_from_details(
     details: &InternalGainsDetails,
     total_floor_area: f64,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<InternalGains> {
+) -> Result<InternalGains, BuildError> {
     InternalGains::new(
         convert_energy_to_wm2(details, total_floor_area)?,
         details.start_day,
         details.time_series_step,
         simulation_time_iterator,
     )
+    .map_err(|error| BuildError::DomainModelBuildError {
+        domain_model: "internal gains",
+        error: error.into(),
+    })
 }
 
 fn convert_energy_to_wm2(
@@ -4138,37 +4155,36 @@ impl Controls {
     pub(crate) fn get_setpoint_or_combination_control(
         &self,
         control_name: &str,
-    ) -> anyhow::Result<SetpointOrCombinationControl> {
+    ) -> Result<SetpointOrCombinationControl, BuildError> {
         let control = self
             .get_with_string(control_name)
-            .ok_or_else(|| anyhow!("No control found for reference '{control_name}'"))?;
+            .ok_or_else(|| BuildError::BadControlReference(control_name.to_string()))?;
 
         match control {
             Control::SetpointTime(control) => Ok(SetpointOrCombinationControl::SetpointTime(control)),
             Control::CombinationTime(control) => Ok(SetpointOrCombinationControl::CombinationTime(control)),
-            _ => bail!("Control {control_name} was expected to be a SetPointTimeControl or CombinationTimeControl")
+            _ => Err(BuildError::IncompatibleControl(format!("Control {control_name} was expected to be a SetPointTimeControl or CombinationTimeControl"))),
         }
     }
 
     pub(crate) fn get_range_time_control(
         &self,
         control_refs: &ControlReferences,
-    ) -> anyhow::Result<CompositeRangeTimeControl> {
+    ) -> Result<CompositeRangeTimeControl, BuildError> {
         match control_refs {
             ControlReferences::Unified {
                 control: control_name,
             } => {
                 let control = self
                     .get_with_string(control_name)
-                    .ok_or_else(|| anyhow!("No control found for reference '{control_name}'"))?;
+                    .ok_or_else(|| BuildError::BadControlReference(control_name.to_string()))?;
 
                 if let Control::RangeTime(range_time_control) = control {
                     Ok(range_time_control.into())
                 } else {
-                    bail!(
-                        "Control {} was expected to be a RangeTimeControl",
-                        control_name
-                    );
+                    Err(BuildError::IncompatibleControl(format!(
+                        "Control {control_name} was expected to be a RangeTimeControl",
+                    )))
                 }
             }
             ControlReferences::Bounded {
@@ -4177,16 +4193,20 @@ impl Controls {
             } => {
                 let min: Option<ControlSetPoint> = self
                     .get_with_string(control_min)
-                    .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?
+                    .ok_or_else(|| BuildError::BadControlReference(control_min.to_string()))?
                     .into();
                 let max: Option<ControlSetPoint> = self
                     .get_with_string(control_max)
-                    .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?
+                    .ok_or_else(|| BuildError::BadControlReference(control_max.to_string()))?
                     .into();
 
                 Ok(CompositeRangeTimeControl::MinMax {
-                    control_min: min.ok_or_else(|| anyhow!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))?,
-                    control_max: max.ok_or_else(|| anyhow!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))?,
+                    control_min: min.ok_or_else(|| {
+                        BuildError::IncompatibleControl(format!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))
+                    })?,
+                    control_max: max.ok_or_else(|| {
+                        BuildError::IncompatibleControl(format!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))
+                    })?,
                 })
             }
         }
@@ -4216,7 +4236,11 @@ fn wwhr_system_from_details(
     system: WasteWaterHeatRecoveryDetails,
     cold_water_sources: &ColdWaterSources,
 ) -> anyhow::Result<WwhrsInstantaneous> {
-    let cold_water_source = cold_water_sources.get(system.cold_water_source.as_str()).ok_or_else(|| anyhow!("Cold water source '{}' referenced by WWHRS input not found in cold water sources list.", system.cold_water_source))?;
+    let cold_water_source = cold_water_sources
+        .get(system.cold_water_source.as_str())
+        .ok_or_else(|| {
+            BuildError::BadColdWaterSourceReference(system.cold_water_source.to_string())
+        })?;
 
     // Get efficiency data for all systems if provided
     let WasteWaterHeatRecoveryDetails {
@@ -4513,7 +4537,7 @@ fn zone_from_input(
             .collect_vec();
         if !h_overassigned.is_empty() {
             return Err(BuildError::SpaceHeatSystemReferencedByMultipleZones(
-                h_overassigned.into_iter().join(", ").into(),
+                h_overassigned.into_iter().join(", "),
             ));
         }
     }
@@ -4538,7 +4562,7 @@ fn zone_from_input(
             .collect_vec();
         if !c_overassigned.is_empty() {
             return Err(BuildError::SpaceCoolSystemReferencedByMultipleZones(
-                c_overassigned.into_iter().join(", ").into(),
+                c_overassigned.into_iter().join(", "),
             ));
         }
     }
@@ -4595,11 +4619,14 @@ fn infiltration_ventilation_from_input(
     smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
     vents_open_during_airtightness_test: Option<bool>,
     smart_air_brick_floor_area_fraction: f64,
-) -> anyhow::Result<(
-    InfiltrationVentilation,
-    Option<ControlSetPoint>,
-    VentAdjustControl,
-)> {
+) -> Result<
+    (
+        InfiltrationVentilation,
+        Option<ControlSetPoint>,
+        VentAdjustControl,
+    ),
+    BuildError,
+> {
     let window_adjust_control = input
         .control_window_adjust
         .as_ref()
@@ -4610,11 +4637,13 @@ fn infiltration_ventilation_from_input(
         VentAdjustControlReferences::Unified {
             control_vent_adjust,
         } => {
-            let control = controls.get_with_string(control_vent_adjust).ok_or_else(|| anyhow!("Referenced control '{control_vent_adjust}' for vent adjusting was not provided"))?;
+            let control = controls
+                .get_with_string(control_vent_adjust)
+                .ok_or_else(|| BuildError::BadControlReference(control_vent_adjust.to_string()))?;
             let range_time_control = if let Control::RangeTime(range_time_control) = control {
                 range_time_control
             } else {
-                bail!("Control '{control_vent_adjust}' for vent adjusting is not a range time control");
+                return Err(BuildError::IncompatibleControl(format!("Control '{control_vent_adjust}' for vent adjusting is not a range time control")));
             };
 
             VentAdjustControl::Unified(range_time_control)
@@ -4817,10 +4846,15 @@ fn building_element_from_input(
                 ..
             } = floor_data
             {
-                if let Control::SetpointTime(setpoint_control) = controls.get_with_string(control_smart_air_brick).ok_or_else(|| anyhow!("Smart air brick control referenced with name '{control_smart_air_brick}' not provided"))? {
+                if let Control::SetpointTime(setpoint_control) = controls
+                    .get_with_string(control_smart_air_brick)
+                    .ok_or_else(|| {
+                        BuildError::BadControlReference(control_smart_air_brick.to_string())
+                    })?
+                {
                     Some(setpoint_control)
                 } else {
-                    return Err(BuildError::IncompatibleControl(format!("Referenced smart brick control '{control_smart_air_brick}' was expected to refer to a setpoint time control").into()));
+                    return Err(BuildError::IncompatibleControl(format!("Referenced smart brick control '{control_smart_air_brick}' was expected to refer to a setpoint time control")));
                 }
             } else {
                 None
@@ -4967,10 +5001,7 @@ fn apply_appliance_gains_from_input(
             energy_supplies
                 .get(&gains_details.energy_supply)
                 .ok_or_else(|| {
-                    anyhow!(
-                        "Appliance gains reference an undeclared energy supply '{}'.",
-                        gains_details.energy_supply
-                    )
+                    BuildError::BadEnergySupplyReference(gains_details.energy_supply.to_string())
                 })?
                 .clone(),
             &name,
@@ -5431,7 +5462,7 @@ fn heat_source_wet_from_input(
     total_floor_area: f64,
     existing_internal_gains_names: &[ArcStr],
     detailed_output_heating_cooling: bool,
-) -> anyhow::Result<HeatSourceWetDataFromInput> {
+) -> Result<HeatSourceWetDataFromInput, BuildError> {
     let mut internal_gains_from_heat_source_wet = vec![];
     let mut timestep_end_calcs = vec![];
     let mut heat_source_wet_boilers = vec![];
@@ -5454,7 +5485,7 @@ fn heat_source_wet_from_input(
                     match mech_vent.vent_type() {
                         MechVentType::IntermittentMev
                         | MechVentType::DecentralisedContinuousMev => {
-                            bail!("Exhaust air heat pump does not work with Intermittent MEV or Decentralised continuous MEV.")
+                            return Err(BuildError::IncompatibleMechanicalVentilationForHeatPump("Exhaust air heat pump does not work with Intermittent MEV or Decentralised continuous MEV."))
                         }
                         _ => {
                             throughput_exhaust_air =
@@ -5474,7 +5505,16 @@ fn heat_source_wet_from_input(
                 HeatPumpSourceType::HeatNetwork
             ) {
                 let energy_supply_heat_network = energy_supply_heat_network.as_ref().ok_or_else(|| anyhow!("A heat pump with a heat network source is expected to reference an energy supply for the heat network."))?;
-                Some(energy_supplies.get(energy_supply_heat_network).ok_or_else(|| anyhow!("A heat network with a heat network source references an undeclared energy supply '{energy_supply_heat_network}'."))?.clone())
+                Some(
+                    energy_supplies
+                        .get(energy_supply_heat_network)
+                        .ok_or_else(|| {
+                            BuildError::BadEnergySupplyReference(
+                                energy_supply_heat_network.to_string(),
+                            )
+                        })?
+                        .clone(),
+                )
             } else {
                 Some(energy_supplies.get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME).ok_or_else(|| anyhow!("A heat pump with a '{source_type:?}' source is expected to have an energy supply representing the environment set up."))?.clone())
             };
@@ -5483,19 +5523,13 @@ fn heat_source_wet_from_input(
                 let energy_supply_boiler = energy_supplies
                     .get(&boiler.energy_supply)
                     .ok_or_else(|| {
-                        anyhow!(
-                            "A boiler references an undeclared energy supply '{}'.",
-                            boiler.energy_supply
-                        )
+                        BuildError::BadEnergySupplyReference(boiler.energy_supply.to_string())
                     })?
                     .clone();
                 let energy_supply_aux_boiler = energy_supplies
                     .get(&boiler.energy_supply_aux)
                     .ok_or_else(|| {
-                        anyhow!(
-                            "A boiler references an undeclared energy supply '{}'.",
-                            boiler.energy_supply_aux
-                        )
+                        BuildError::BadEnergySupplyReference(boiler.energy_supply_aux.to_string())
                     })?
                     .clone();
 
@@ -5520,9 +5554,7 @@ fn heat_source_wet_from_input(
 
             let energy_supply = energy_supplies
                 .get(energy_supply)
-                .ok_or_else(|| {
-                    anyhow!("Heat pump references an undeclared energy supply '{energy_supply}'.")
-                })?
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
                 .clone();
             let energy_supply_conn_name_auxiliary = format!("HeatPump_auxiliary: {name}");
 
@@ -5553,11 +5585,14 @@ fn heat_source_wet_from_input(
         } => {
             let energy_supply = energy_supplies
                 .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
+            let energy_supply_aux = energy_supplies
+                .get(energy_supply_auxiliary)
                 .ok_or_else(|| {
-                    anyhow!("Boiler references undeclared energy supply '{energy_supply}'.")
+                    BuildError::BadEnergySupplyReference(energy_supply_auxiliary.to_string())
                 })?
                 .clone();
-            let energy_supply_aux = energy_supplies.get(energy_supply_auxiliary).ok_or_else(|| anyhow!("Boiler references undeclared auxiliary energy supply '{energy_supply_auxiliary}'."))?.clone();
 
             let heat_source = Arc::new(RwLock::new(Boiler::new(
                 input,
@@ -5579,9 +5614,7 @@ fn heat_source_wet_from_input(
         HeatSourceWetDetails::DirectElectricBoiler { energy_supply, .. } => {
             let energy_supply = energy_supplies
                 .get(energy_supply)
-                .ok_or_else(|| {
-                    anyhow!("HIU references an undeclared energy supply '{energy_supply}'.")
-                })?
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
                 .clone();
             let energy_supply_conn_name_auxiliary = ["Boiler_auxiliary: ", name].concat();
             let heat_source = WetHeatSource::DirectElectricBoiler(Arc::new(RwLock::new(
@@ -5609,9 +5642,7 @@ fn heat_source_wet_from_input(
         } => {
             let energy_supply = energy_supplies
                 .get(energy_supply)
-                .ok_or_else(|| {
-                    anyhow!("HIU references an undeclared energy supply '{energy_supply}'.")
-                })?
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
                 .clone();
             let energy_supply_conn_name_auxiliary =
                 ["HeatNetwork_auxiliary: ", name].concat().into();
@@ -5647,7 +5678,11 @@ fn heat_source_wet_from_input(
                 .iter()
                 .any(|existing_name| name == existing_name)
             {
-                bail!("Name '{name}' of HIU duplicates name of an existing InternalGains object");
+                // NB. it should be possible to prevent this error needing to be thrown as having HIU names clashing with internal gains names is counterintuitive.
+                // returning a general error for now as incidences are likely to be vanishingly rare.
+                return Err(BuildError::General(anyhow!(
+                    "Name '{name}' of HIU duplicates name of an existing InternalGains object"
+                )));
             }
 
             internal_gains_from_heat_source_wet.push((
@@ -5667,9 +5702,7 @@ fn heat_source_wet_from_input(
                     let energy_supply = energy_supplies
                         .get(energy_supply)
                         .ok_or_else(|| {
-                            anyhow!(
-                        "Heat battery references an undeclared energy supply '{energy_supply}'."
-                    )
+                            BuildError::BadEnergySupplyReference(energy_supply.to_string())
                         })?
                         .clone();
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
@@ -5704,13 +5737,13 @@ fn heat_source_wet_from_input(
                                                 range_time_control,
                                             ) =
                                                 controls.get_with_string(control_reference).ok_or_else(
-                                                    || anyhow!("Control not found for PCM heat source"),
+                                                    || {
+                                                        BuildError::BadControlReference(control_reference.to_string())
+                                                    },
                                                 )? {
                                                 range_time_control.clone()
                                             } else {
-                                                return Err(anyhow!(
-                                                "Expected RangeTime control for PCM heat source"
-                                            ));
+                                                return Err(BuildError::IncompatibleControl("Expected RangeTime control for PCM heat source.".to_string()));
                                             };
 
                                             let heat_source = (
@@ -5764,14 +5797,17 @@ fn heat_source_wet_from_input(
                                 control_charge,
                                 ..
                             } => {
-                                let charge_control = controls.get_with_string(control_charge).ok_or_else(|| anyhow!("The control '{control_charge}' referenced by a PCM heat battery is not provided"))?;
+                                let charge_control =
+                                    controls.get_with_string(control_charge).ok_or_else(|| {
+                                        BuildError::BadControlReference(control_charge.to_string())
+                                    })?;
 
                                 let charge_control = if let Control::Charge(charge_control) =
                                     charge_control
                                 {
                                     charge_control
                                 } else {
-                                    bail!("The control '{control_charge}' referenced by a PCM heat battery is not a charge control");
+                                    return Err(BuildError::IncompatibleControl(format!("The control '{control_charge}' referenced by a PCM heat battery is not a charge control")));
                                 };
 
                                 (None, Some(charge_control))
@@ -5862,24 +5898,19 @@ fn heat_source_wet_from_input(
                     let energy_supply = energy_supplies
                         .get(energy_supply)
                         .ok_or_else(|| {
-                            anyhow!(
-                        "Heat battery references an undeclared energy supply '{energy_supply}'."
-                    )
+                            BuildError::BadEnergySupplyReference(energy_supply.to_string())
                         })?
                         .clone();
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
                     let charge_control = if let Control::Charge(control) = controls
                         .get_with_string(control_charge)
-                        .ok_or_else(|| {
-                            anyhow!(
-                                    "expected a control to be registered with the name '{control_charge}'"
-                                )
-                        })?
-                        .clone() {
+                        .ok_or_else(|| BuildError::BadControlReference(control_charge.to_string()))?
+                        .clone()
+                    {
                         control
                     } else {
-                        bail!("A dry core heat battery expected its charge control '{control_charge}' to reference a charge control");
+                        return Err(BuildError::IncompatibleControl("A dry core heat battery expected its charge control '{control_charge}' to reference a charge control".into()));
                     };
 
                     WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
@@ -5942,7 +5973,10 @@ fn heat_source_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             let range_time_control = if let Some(control_refs) = control_refs {
@@ -5983,14 +6017,21 @@ fn heat_source_from_input(
             control_max,
             ..
         } => {
-            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Solar thermal system references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
             let control_max = control_max_diverter_from_control(
                 controls
                     .get_with_string(control_max)
-                    .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?
+                    .ok_or_else(|| {
+                        BuildError::BadControlReference(control_max.to_string())
+                    })?
             )
-                .ok_or_else(|| anyhow!("The control '{control_max}' was expected to be a setpoint time control or a combination control"))?;
+                .ok_or_else(|| {
+                    BuildError::IncompatibleControl(format!("The control '{control_max}' was expected to be a setpoint time control or a combination control"))
+                })?;
 
             let energy_supply_from_environment = energy_supplies
                 .get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME)
@@ -6039,14 +6080,12 @@ fn heat_source_from_input(
                 format!("{name}_water_heating: {hot_water_source_name}").into();
             let heat_source_wet = wet_heat_sources
                 .get(name)
-                .ok_or_else(|| {
-                    anyhow!("Expected a wet heat source registered with the name '{name}'.")
-                })?
+                .ok_or_else(|| BuildError::BadHeatSourceWetReference(name.to_string()))?
                 .clone();
 
             let control_refs = control_refs
                 .clone()
-                .ok_or_else(|| anyhow!("Missing control for {name}"))?;
+                .ok_or_else(|| BuildError::BadControlReference(name.to_string()))?;
             let range_time_control = controls.get_range_time_control(&control_refs)?;
 
             let mut heat_source_wet_clone = heat_source_wet.clone();
@@ -6129,13 +6168,16 @@ fn heat_source_from_input(
             tank_is_integral,
             ..
         } => {
-            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Heat pump (hot water only) references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
             let control_refs = control_refs
                 .clone()
-                .ok_or_else(|| anyhow!("Missing control for {name}"))?;
+                .ok_or_else(|| BuildError::BadControlReference(name.to_string()))?;
             let range_time_control = controls.get_range_time_control(&control_refs)?;
 
             Ok(HeatSourceFromInput {
@@ -6390,7 +6432,7 @@ fn hot_water_source_from_input(
     detailed_output_heating_cooling: bool,
     used_heat_source_names: &mut IndexSet<ArcStr>,
     cold_water_sources_already_allocated: &mut IndexSet<ArcStr>,
-) -> anyhow::Result<HotWaterSourceFromInputData> {
+) -> Result<HotWaterSourceFromInputData, BuildError> {
     let mut energy_supply_conn_names = vec![];
     let mut hot_water_source_name_for_service: IndexMap<ArcStr, ArcStr> = Default::default();
     let mut heat_battery_names_for_hot_water_source: Vec<ArcStr> = Default::default();
@@ -6520,7 +6562,12 @@ fn hot_water_source_from_input(
             if let Some(diverter_inputs) = diverter_types.get(energy_supply_name) {
                 for (diverter_name, diverter) in diverter_inputs {
                     if &diverter.heat_source == heat_source_name {
-                        let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
+                        let energy_supply = energy_supplies
+                            .get(energy_supply_name)
+                            .ok_or_else(|| {
+                                BuildError::BadEnergySupplyReference(energy_supply_name.to_string())
+                            })?
+                            .clone();
 
                         let positioned_heat_source = &heat_sources.get(heat_source_name);
                         let immersion_heater = positioned_heat_source
@@ -6533,7 +6580,9 @@ fn hot_water_source_from_input(
                             let control_max = controls
                                 .get_with_string(&diverter.control_max)
                                 .and_then(control_max_diverter_from_control)
-                                .ok_or_else(|| anyhow!("PV diverter control '{}' was expected to be a setpoint time control or a combination control", diverter.control_max))?;
+                                .ok_or_else(|| {
+                                    BuildError::IncompatibleControl(format!("PV diverter control '{}' was expected to be a setpoint time control or a combination control", diverter.control_max))
+                                })?;
                             let pv_diverter = PVDiverter::new(
                                 &pre_heated_tank,
                                 im,
@@ -6620,9 +6669,7 @@ fn hot_water_source_from_input(
                 .map(|source| source.heater_position)
                 .all_equal()
             {
-                return Err(anyhow!(
-                    "For SmartHotWaterTank, heater position must be the same for all heat sources"
-                ));
+                return Err(BuildError::SmartHotWaterTankNeedsConsistentHeaterPosition);
             }
 
             let energy_supply_pump = energy_supplies[&details.energy_supply_pump].clone();
@@ -6630,10 +6677,15 @@ fn hot_water_source_from_input(
             let energy_supply_conn_pump =
                 EnergySupply::connection(energy_supply_pump, &pump_source_name)?;
 
-            let temp_setpnt_max: Arc<SetpointTimeControl> = if let Control::SetpointTime(ctrl) = controls.get_with_string(&details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))? {
+            let temp_setpnt_max: Arc<SetpointTimeControl> = if let Control::SetpointTime(ctrl) =
+                controls
+                    .get_with_string(&details.temp_setpnt_max)
+                    .ok_or_else(|| {
+                        BuildError::BadControlReference(details.temp_setpnt_max.to_string())
+                    })? {
                 ctrl.clone()
             } else {
-                bail!("A setpoint time control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object - control '{}' was passed.", details.temp_setpnt_max)
+                return Err(BuildError::IncompatibleControl(format!("A setpoint time control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object - control '{}' was passed.", details.temp_setpnt_max)));
             };
 
             let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new(
@@ -6693,9 +6745,12 @@ fn hot_water_source_from_input(
             let energy_supply_conn_name: ArcStr =
                 [heat_source_wet_type, "_water_heating"].concat().into();
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_type).ok_or_else(|| {
-                anyhow!("Expected '{heat_source_wet_type}' to have been defined as a wet heat source")
-            })?;
+            let heat_source_wet =
+                wet_heat_sources
+                    .get_mut(heat_source_wet_type)
+                    .ok_or_else(|| {
+                        BuildError::BadHeatSourceWetReference(heat_source_wet_type.to_string())
+                    })?;
 
             let keep_hot_control_name = match combi_type_specific_details {
                 crate::input::CombiTypeSpecificDetails::KeepHot {
@@ -6708,18 +6763,17 @@ fn hot_water_source_from_input(
                 let control = controls
                     .get_with_string(keep_hot_control_name)
                     .ok_or_else(|| {
-                        anyhow!(
-                            "Control {} was referenced but does not exist",
-                            keep_hot_control_name
-                        )
+                        BuildError::BadControlReference(keep_hot_control_name.to_string())
                     })?;
 
                 match &control {
                     Control::OnOffTime(on_off_time_control) => Some(on_off_time_control.clone()),
-                    _ => bail!(
-                        "Control {} must be an OnOffTimeControl for a Control_keep_hot",
-                        keep_hot_control_name
-                    ),
+                    _ => {
+                        return Err(BuildError::IncompatibleControl(format!(
+                            "Control {} must be an OnOffTimeControl for a Control_keep_hot",
+                            keep_hot_control_name
+                        )))
+                    }
                 }
             } else {
                 None
@@ -6744,7 +6798,10 @@ fn hot_water_source_from_input(
             setpoint_temp,
             ..
         } => {
-            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Point of use hot water source references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
             let energy_supply_conn_name = name;
             energy_supply_conn_names.push(energy_supply_conn_name.to_string().into());
             let energy_supply_conn =
@@ -6782,12 +6839,19 @@ fn hot_water_source_from_input(
                 pre_heated_water_sources,
                 cold_water_sources_already_allocated,
             )?;
-            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_name).ok_or_else(|| {
-                anyhow!("Expected '{heat_source_wet_name}' to have been defined as a wet heat source")
-            })?;
+            let heat_source_wet =
+                wet_heat_sources
+                    .get_mut(heat_source_wet_name)
+                    .ok_or_else(|| {
+                        BuildError::BadHeatSourceWetReference(heat_source_wet_name.to_string())
+                    })?;
             let heat_network = match heat_source_wet {
                 WetHeatSource::Hiu(heat_network) => heat_network.clone(),
-                _ => bail!("Expected '{heat_source_wet_name}' to be a heat network"),
+                _ => {
+                    return Err(BuildError::IncompatibleHeatSourceWet(
+                        format!("Expected the referenced heat source wet entry '{heat_source_wet_name}' to be a heat network."),
+                    ))
+                }
             };
 
             HotWaterSource::HeatNetwork(
@@ -6824,13 +6888,13 @@ fn hot_water_source_from_input(
                 cold_water_sources_already_allocated,
             )?;
             let heat_source_wet = wet_heat_sources.get(heat_source_wet_name).ok_or_else(|| {
-                anyhow!(
-                    "Expected a wet heat source registered with the name '{heat_source_wet_name}'."
-                )
+                BuildError::BadHeatSourceWetReference(heat_source_wet_name.to_string())
             })?;
             let heat_battery = match heat_source_wet {
                 WetHeatSource::HeatBattery(heat_battery) => heat_battery.clone(),
-                _ => unreachable!("heat source wet was expected to be a heat battery"),
+                _ => return Err(BuildError::IncompatibleHeatSourceWet(
+                    format!("Expected the referenced heat source wet entry '{heat_source_wet_name}' to be a heat battery."),
+                )),
             };
 
             HotWaterSource::HeatBattery(match heat_battery {
@@ -6909,7 +6973,9 @@ fn cold_water_source_for_type(
     Ok(WaterSupply::ColdWaterSource(
         cold_water_sources
             .get(cold_water_source_type)
-            .ok_or_else(|| anyhow!("referenced cold water source was expected to exist"))?
+            .ok_or_else(|| {
+                BuildError::BadColdWaterSourceReference(cold_water_source_type.to_string())
+            })?
             .clone(),
     ))
 }
@@ -6967,12 +7033,16 @@ fn space_heat_systems_from_input(
                             thermal_mass,
                             thermal_mass_per_kw
                         } => {
-                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| {
+                                BuildError::BadEnergySupplyReference(energy_supply.to_string())
+                            })?.clone();
                             let energy_supply_conn_name = system_name.clone();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                             let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
 
-                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("Space heat system references an undeclared control '{control}'."))?.into();
+                            let control = controls.get_with_string(control).ok_or_else(|| {
+                                BuildError::BadControlReference(control.to_string())
+                            })?.into();
 
                             SpaceHeatSystem::Instant(InstantElecHeater::new(
                                 *rated_power,
@@ -6992,25 +7062,33 @@ fn space_heat_systems_from_input(
                         }
                         SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, dry_core_min_output, dry_core_max_output, state_of_charge_init, .. } => {
                             let zone: ArcStr = zone.into();
-                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| {
+                                BuildError::BadEnergySupplyReference(energy_supply.to_string())
+                            })?.clone();
                             let energy_supply_conn_name = system_name.clone();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                             let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
 
-                            let zone = zones.get(&zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.clone();
+                            let zone = zones.get(&zone).ok_or_else(|| {
+                                BuildError::BadZoneReference(zone.to_string())
+                            })?.clone();
                             let zone_setpoint_init = zone.setpnt_init();
                             let control_name = control.clone();
-                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
+                            let control = controls.get_with_string(control).ok_or_else(|| {
+                                BuildError::BadControlReference(control.to_string())
+                            })?;
                             let control = if let Control::SetpointTime(control) = control {
                                 control
                             } else {
-                                bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a setpoint time control");
+                                return Err(BuildError::IncompatibleControl(format!("The control '{control_name}' referenced by an electric storage heater was expected to be a setpoint time control")));
                             };
-                            let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
+                            let charge_control = controls.get_with_string(control_charger).ok_or_else(|| {
+                                BuildError::BadControlReference(control_charger.to_string())
+                            })?;
                             let charge_control = if let Control::Charge(control) = charge_control {
                                 control
                             } else {
-                                bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a charge control");
+                                return Err(BuildError::IncompatibleControl(format!("The control '{control_name}' referenced by an electric storage heater was expected to be a charge control")));
                             };
                             SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(
                                 *pwr_in,
@@ -7041,10 +7119,14 @@ fn space_heat_systems_from_input(
                             let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
 
-                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
+                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| {
+                                BuildError::BadHeatSourceWetReference(heat_source_name.to_string())
+                            })?;
                             let mut with_buffer_tank = false;
 
-                            let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
+                            let control = controls.get_with_string(control_name).ok_or_else(|| {
+                                BuildError::BadControlReference(control_name.to_string())
+                            })?;
                             let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
 
                             let heat_source_service: SpaceHeatingService =
@@ -7095,7 +7177,9 @@ fn space_heat_systems_from_input(
                                         let heat_source_service = HeatNetwork::create_service_space_heating(
                                             heat_network.clone(),
                                             &energy_supply_conn_name,
-                                            control.ok_or_else(|| anyhow!("An HIU expected to be passed a control that can be used as a setpoint control"))?,
+                                            control.ok_or_else(|| {
+                                                BuildError::IncompatibleControl("An HIU expected to be passed a control that can be used as a setpoint control".to_string())
+                                            })?,
                                         );
                                         SpaceHeatingService::HeatNetwork(heat_source_service)
                                     }
@@ -7106,7 +7190,7 @@ fn space_heat_systems_from_input(
                                                     let control = if let Control::SetpointTime(control) = control {
                                                         control
                                                     } else {
-                                                        bail!("A dry core heat battery expected to be passed a control that can be used as a setpoint control")
+                                                        return Err(BuildError::IncompatibleControl("A dry core heat battery expected to be passed a control that can be used as a setpoint control".into()));
                                                     };
 
                                                     HeatBatteryDryCore::create_service_space_heating(
@@ -7122,7 +7206,9 @@ fn space_heat_systems_from_input(
                                                         pcm.clone(),
                                                         &energy_supply_conn_name,
                                                         control_max_diverter_from_control(control)
-                                                            .ok_or_else(|| anyhow!("A PCM heat battery expected to be passed a control that was either a setpoint time control or a combination control"))?,
+                                                            .ok_or_else(|| {
+                                                                BuildError::IncompatibleControl("A PCM heat battery expected to be passed a control that was either a setpoint time control or a combination control".to_string())
+                                                            })?,
                                                     )?
                                                 )
                                         })
@@ -7139,7 +7225,9 @@ fn space_heat_systems_from_input(
                                 None
                             } else {
                                 let energy_supply_name = energy_supply.clone().unwrap();
-                                let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
+                                let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| {
+                                    BuildError::BadEnergySupplyReference(energy_supply_name.to_string())
+                                })?.clone();
                                 let energy_supply_fc_conn_name: ArcStr = format!("FC_fan {system_name}").into();
                                 Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_ref()).unwrap()))
                             };
@@ -7167,7 +7255,9 @@ fn space_heat_systems_from_input(
                                 },
                                 *bypass_fraction_recirculated,
                                 Arc::new(RwLock::new(heat_source_service)),
-                                zones.get(&zone).ok_or_else(|| anyhow!("Space heat system wet distribution had reference to undeclared zone with name '{zone}'"))?.clone(),
+                                zones.get(&zone).ok_or_else(|| {
+                                    BuildError::BadZoneReference(zone.to_string())
+                                })?.clone(),
                                 // zone area
                                 external_conditions.clone(),
                                 *ecodesign_controller,
@@ -7189,7 +7279,9 @@ fn space_heat_systems_from_input(
                             let heat_source_name = &heat_source.name;
                             let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
+                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| {
+                                BuildError::BadHeatSourceWetReference(heat_source_name.to_string())
+                            })?;
 
                             let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
 
@@ -7207,11 +7299,17 @@ fn space_heat_systems_from_input(
                         SpaceHeatSystemDetails::DryElectricUnderfloorHeater { energy_supply, control, frac_convective, rated_power, emitter_floor_area, exponent, constant_fields, thermal_mass_fields } => {
                             let energy_supply_conn_name = system_name.as_str();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.into());
-                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| {
+                                BuildError::BadEnergySupplyReference(energy_supply.to_string())
+                            })?.clone();
                             let zone_area = zone.area();
 
-                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("Space heat system references an undeclared control '{control}'."))?;
-                            let control = Option::<SetpointOrCombinationControl>::from(control).ok_or_else(|| anyhow!("UFH '{system_name}' references a control that should be a setpoint or combination control."))?;
+                            let control = controls.get_with_string(control).ok_or_else(|| {
+                                BuildError::BadControlReference(control.to_string())
+                            })?;
+                            let control = Option::<SetpointOrCombinationControl>::from(control).ok_or_else(|| {
+                                BuildError::IncompatibleControl(format!("UFH '{system_name}' references a control that should be a setpoint or combination control."))
+                            })?;
 
                             let (c, c_per_m2) = match constant_fields {
                                 UnderfloorHeaterConstantFields::Absolute { constant } => (Some(*constant), None),
@@ -7256,7 +7354,7 @@ fn space_heat_systems_from_input(
                 },
             ))
         })
-        .collect::<anyhow::Result<IndexMap<_, _>>>()?;
+        .collect::<Result<IndexMap<_, _>, _>>()?;
     Ok(SpaceHeatSystemsData {
         space_heat_systems,
         energy_conn_names_for_systems,
@@ -7298,11 +7396,17 @@ fn space_cool_systems_from_input(
                 energy_supply,
                 ..
             } = space_cool_system_details;
-            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space cool system references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                .clone();
             let energy_supply_conn_name: ArcStr = system_name.into();
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
-            let control: Option<ControlSetPoint> = controls.get_with_string(control).ok_or_else(|| anyhow!("The control reference '{control}' was expected to refer to a known control."))?.into();
+            let control: Option<ControlSetPoint> = controls
+                .get_with_string(control)
+                .ok_or_else(|| BuildError::BadControlReference(control.to_string()))?
+                .into();
 
             Ok((
                 energy_supply_conn_name,
@@ -7312,7 +7416,12 @@ fn space_cool_systems_from_input(
                     *frac_convective,
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
-                    control.ok_or_else(|| anyhow!("An air conditioning system expected a control with a setpoint"))?,
+                    control.ok_or_else(|| {
+                        BuildError::IncompatibleControl(
+                            "An air conditioning system expected a control with a setpoint"
+                                .to_string(),
+                        )
+                    })?,
                 ),
             ))
         })
@@ -7335,39 +7444,54 @@ fn on_site_generation_from_input(
                     inverter_peak_power_ac,
                     inverter_is_inside,
                     inverter_type,
-                    energy_supply
+                    energy_supply,
                 ) = match generation_details {
                     PhotovoltaicInputs::DeprecatedStyle(PhotovoltaicSystemInput {
-                                                            peak_power,
-                                                            ventilation_strategy,
-                                                            pitch,
-                                                            orientation360: orientation,
-                                                            base_height,
-                                                            height,
-                                                            width,
-                                                            energy_supply,
-                                                            shading,
-                                                            inverter_peak_power_dc,
-                                                            inverter_peak_power_ac,
-                                                            inverter_is_inside,
-                                                            inverter_type, ..
-                                                        }) => {
-                        (
-                            vec![PhotovoltaicPanel::new(*peak_power, *ventilation_strategy, *pitch, *orientation, *base_height, *height, *width, simulation_time_iterator.step_in_hours(), shading.to_vec())],
-                            *inverter_peak_power_dc,
-                            *inverter_peak_power_ac,
-                            *inverter_is_inside,
-                            *inverter_type,
-                            energy_supply
-                        )
-                    }
+                        peak_power,
+                        ventilation_strategy,
+                        pitch,
+                        orientation360: orientation,
+                        base_height,
+                        height,
+                        width,
+                        energy_supply,
+                        shading,
+                        inverter_peak_power_dc,
+                        inverter_peak_power_ac,
+                        inverter_is_inside,
+                        inverter_type,
+                        ..
+                    }) => (
+                        vec![PhotovoltaicPanel::new(
+                            *peak_power,
+                            *ventilation_strategy,
+                            *pitch,
+                            *orientation,
+                            *base_height,
+                            *height,
+                            *width,
+                            simulation_time_iterator.step_in_hours(),
+                            shading.to_vec(),
+                        )],
+                        *inverter_peak_power_dc,
+                        *inverter_peak_power_ac,
+                        *inverter_is_inside,
+                        *inverter_type,
+                        energy_supply,
+                    ),
                     PhotovoltaicInputs::WithPanels(PhotovoltaicSystemWithPanelsInput {
-                                                       energy_supply, inverter_is_inside, inverter_peak_power_ac, inverter_peak_power_dc, inverter_type, panels, ..
-                                                   }) => {
-                        (
-                            panels
-                                .iter()
-                                .map(|panel| PhotovoltaicPanel::new(
+                        energy_supply,
+                        inverter_is_inside,
+                        inverter_peak_power_ac,
+                        inverter_peak_power_dc,
+                        inverter_type,
+                        panels,
+                        ..
+                    }) => (
+                        panels
+                            .iter()
+                            .map(|panel| {
+                                PhotovoltaicPanel::new(
                                     panel.peak_power,
                                     panel.ventilation_strategy,
                                     panel.pitch,
@@ -7376,19 +7500,22 @@ fn on_site_generation_from_input(
                                     panel.height,
                                     panel.width,
                                     simulation_time_iterator.step_in_hours(),
-                                    panel.shading.to_vec())
+                                    panel.shading.to_vec(),
                                 )
-                                .collect(),
-                            *inverter_peak_power_dc,
-                            *inverter_peak_power_ac,
-                            *inverter_is_inside,
-                            *inverter_type,
-                            energy_supply
-                        )
-                    }
+                            })
+                            .collect(),
+                        *inverter_peak_power_dc,
+                        *inverter_peak_power_ac,
+                        *inverter_is_inside,
+                        *inverter_type,
+                        energy_supply,
+                    ),
                 };
 
-                let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("On site generation (photovoltaic) references an undeclared energy supply '{energy_supply}'."))?.clone();
+                let energy_supply = energy_supplies
+                    .get(energy_supply)
+                    .ok_or_else(|| BuildError::BadEnergySupplyReference(energy_supply.to_string()))?
+                    .clone();
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
                 let inverter = Inverter::new(
                     energy_supply_conn,
@@ -7398,11 +7525,7 @@ fn on_site_generation_from_input(
                     inverter_is_inside,
                     inverter_type,
                 );
-                PhotovoltaicSystem::new(
-                    external_conditions.clone(),
-                    panels,
-                    inverter,
-                )
+                PhotovoltaicSystem::new(external_conditions.clone(), panels, inverter)
             }))
         })
         .collect::<anyhow::Result<IndexMap<_, _>>>()
@@ -7557,51 +7680,71 @@ impl AndReturn {
 /// An error encountered when building the corpus.
 #[derive(Debug, Error)]
 pub enum BuildError {
+    #[non_exhaustive]
     #[error(transparent)]
-    Fallback(#[from] anyhow::Error),
+    General(#[from] anyhow::Error),
     #[error("{0}")]
-    PreheatedWaterSourceCircularDependency(ArcStr),
+    PreheatedWaterSourceCircularDependency(String),
     #[error("Preheated water sources in the input must reference either a storage tank or a smart hot water tank."
     )]
     PreheatedWaterSourceDidNotReferenceTank,
     #[error("charge_level for control '{name}' has {values_count} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days."
     )]
     InsufficientControlChargeLevelValuesForSimulation {
-        name: ArcStr,
+        name: String,
         required_length: usize,
         values_count: usize,
     },
     #[error("Circular control references detected in combination control involving control with name '{0}'."
     )]
-    CircularReferenceDetectedInCombinationControl(ArcStr),
+    CircularReferenceDetectedInCombinationControl(String),
     #[error("A reference '{0}' to a control was found that is not defined in the input controls section."
     )]
-    BadControlReference(ArcStr),
+    BadControlReference(String),
     #[error("A reference '{0}' to a control was found within a combination control input that is not defined in the input controls section."
     )]
-    BadControlReferenceForCombinationControl(ArcStr),
+    BadControlReferenceForCombinationControl(String),
     #[error("Either a u-value or a thermal resistance construction was expected to be provided for building element '{building_element}'."
     )]
-    UValueOrThermalResistanceConstructionNotProvided { building_element: ArcStr },
+    UValueOrThermalResistanceConstructionNotProvided { building_element: String },
     #[error("Values are missing for the field '{0}' in the external conditions provided.")]
     ExternalConditionsFieldValuesMissing(&'static str),
     #[error("The space heat system(s) '{0}' was referenced by systems in multiple zones.")]
-    SpaceHeatSystemReferencedByMultipleZones(ArcStr),
+    SpaceHeatSystemReferencedByMultipleZones(String),
     #[error("The space heat system(s) '{0}' was referenced by systems in multiple zones.")]
-    SpaceCoolSystemReferencedByMultipleZones(ArcStr),
-    #[error("Incompatible control provided: {0}.")]
-    IncompatibleControl(ArcStr),
+    SpaceCoolSystemReferencedByMultipleZones(String),
+    #[error("Incompatible control provided: {0}")]
+    IncompatibleControl(String),
     #[error("Error when building HEM {domain_model} model: {error}")]
     DomainModelBuildError {
         domain_model: &'static str,
         #[source]
         error: Box<dyn std::error::Error + Send + Sync>,
     },
+    #[error("Incompatible mechanical ventilation for heat pump: {0}")]
+    IncompatibleMechanicalVentilationForHeatPump(&'static str),
+    #[error("Invalid pipework input: {0}")]
+    InvalidPipework(#[from] InvalidPipeworkInput),
+    #[error("For a smart hot water tank, the provided heater position must be the same for all heat sources."
+    )]
+    SmartHotWaterTankNeedsConsistentHeaterPosition,
+    #[error("Expected the referenced heat source wet entry '{0}' to be a heat network.")]
+    IncompatibleHeatSourceWet(String),
+    #[error("A schedule was provided that contained null values: {0}")]
+    ExpectedNoNullValuesInSchedule(String),
+    #[error("A reference to an energy supply {0} was found that is not in the energy supply input section.")]
+    BadEnergySupplyReference(String),
+    #[error("A reference to a heat source wet entry '{0}' was found that is not in the heat source wet input section.")]
+    BadHeatSourceWetReference(String),
+    #[error("A reference to a cold water source entry '{0}' was found that is not in the cold water source input section.")]
+    BadColdWaterSourceReference(String),
+    #[error("A reference to a zone entry '{0}' was found that is not in the zone input section.")]
+    BadZoneReference(String),
 }
 
 impl From<CircularDependencyError> for BuildError {
     fn from(err: CircularDependencyError) -> Self {
-        Self::PreheatedWaterSourceCircularDependency(err.as_arc_str())
+        Self::PreheatedWaterSourceCircularDependency(err.to_string())
     }
 }
 

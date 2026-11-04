@@ -144,7 +144,7 @@ impl TryFrom<WaterPipework> for Pipework {
 
 #[derive(Debug, Error)]
 pub enum InvalidPipeworkInput {
-    #[error("Pipework: external diameter {external_diameter_in_m}m was not greater than internal diameter {internal_diameter_in_m}m")]
+    #[error("External diameter {external_diameter_in_m}m was not greater than internal diameter {internal_diameter_in_m}m")]
     ExternalNotMoreThanInternal {
         external_diameter_in_m: f64,
         internal_diameter_in_m: f64,
