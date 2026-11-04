@@ -2445,6 +2445,36 @@ pub enum HotWaterSourceDetails {
     },
 }
 
+impl HotWaterSourceDetails {
+    pub fn contains_heat_source(&self, source_key: &str) -> bool {
+        match self {
+            HotWaterSourceDetails::StorageTank {
+                details: StorageTankDetails { heat_source, .. },
+            } => heat_source.contains_key(source_key),
+            HotWaterSourceDetails::SmartHotWaterTank {
+                details: SmartHotWaterTankDetails { heat_source, .. },
+            } => heat_source.contains_key(source_key),
+            _ => false,
+        }
+    }
+
+    /// Provides access to check if provided string can be found within the name of a heat source wet, if applicable
+    pub fn contains_heat_source_wet_reference(&self, source_key_part: &str) -> bool {
+        match self {
+            HotWaterSourceDetails::CombiBoiler {
+                heat_source_wet, ..
+            } => heat_source_wet.contains(source_key_part),
+            HotWaterSourceDetails::Hiu {
+                heat_source_wet, ..
+            } => heat_source_wet.contains(source_key_part),
+            HotWaterSourceDetails::HeatBattery {
+                heat_source_wet, ..
+            } => heat_source_wet.contains(source_key_part),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "combi_boiler_type")]
 pub enum CombiTypeSpecificDetails {
