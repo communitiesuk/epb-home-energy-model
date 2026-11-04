@@ -2,7 +2,7 @@
 
 use crate::core::external_conditions::ExternalConditions;
 use crate::core::schedule::validate_schedule_length;
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep, HOURS_IN_DAY};
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
@@ -63,7 +63,7 @@ impl TimeControl {
             TimeControl::Combination(control) => control,
             TimeControl::Charge(control) => control,
         } {
-            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+            pub(crate) fn is_on(&self, timestep: Timestep) -> bool;
         }
     }
 }
@@ -104,8 +104,8 @@ impl OnOffControl {
             OnOffControl::ControlWithSetpoint(control) => control,
             OnOffControl::RangeTime(control) => control,
         } {
-            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
-            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+            pub(crate) fn is_on(&self, timestep: Timestep) -> bool;
+            pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool>;
         }
     }
 }
@@ -138,27 +138,27 @@ pub(crate) enum SetpointOrCombinationControl {
 }
 
 impl SetpointOrCombinationControl {
-    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> Option<f64> {
         match self {
-            SetpointOrCombinationControl::SetpointTime(control) => control.setpnt(simtime),
-            SetpointOrCombinationControl::CombinationTime(control) => control.setpnt(simtime),
+            SetpointOrCombinationControl::SetpointTime(control) => control.setpnt(timestep),
+            SetpointOrCombinationControl::CombinationTime(control) => control.setpnt(timestep),
         }
     }
 
-    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
         match self {
-            SetpointOrCombinationControl::SetpointTime(control) => control.is_on(simtime),
-            SetpointOrCombinationControl::CombinationTime(control) => control.is_on(simtime),
+            SetpointOrCombinationControl::SetpointTime(control) => control.is_on(timestep),
+            SetpointOrCombinationControl::CombinationTime(control) => control.is_on(timestep),
         }
     }
 
-    pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
         match self {
             SetpointOrCombinationControl::SetpointTime(control) => {
-                control.in_required_period(simtime)
+                control.in_required_period(timestep)
             }
             SetpointOrCombinationControl::CombinationTime(control) => {
-                control.in_required_period(simtime)
+                control.in_required_period(timestep)
             }
         }
     }
@@ -200,9 +200,9 @@ impl ControlSetPoint {
             #[cfg(test)]
             ControlSetPoint::Mock(x) => x,
         } {
-            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
-            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
-            pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64>;
+            pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool>;
+            pub(crate) fn is_on(&self, timestep: Timestep) -> bool;
+            pub(crate) fn setpnt(&self, timestep: Timestep) -> Option<f64>;
         }
     }
 }
@@ -289,12 +289,12 @@ impl OnOffTimeControl {
         }
     }
 
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
             .unwrap_or(false)
     }
 
-    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, _timestep: Timestep) -> Option<bool> {
         None
     }
 }
@@ -416,7 +416,7 @@ impl ChargeControl {
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
                         external_conditions
-                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
+                            .air_temp_with_offset(simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = Arc::new(RwLock::new(Some(0.0)));
@@ -454,7 +454,7 @@ impl ChargeControl {
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
                         external_conditions
-                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
+                            .air_temp_with_offset(simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = Arc::new(RwLock::new(Some(0.0)));
@@ -501,13 +501,9 @@ impl ChargeControl {
 
     // In Python there is an abstract method target_charge on the ControlCharge class and a concrete implementation here
     /// Return the charge level value from the list given in inputs; one value per day
-    pub(crate) fn target_charge(
-        &self,
-        simtime: SimulationTimeIteration,
-        temp_air: Option<f64>,
-    ) -> f64 {
+    pub(crate) fn target_charge(&self, simtime: Timestep, temp_air: Option<f64>) -> f64 {
         // Calculate target charge nominal when unit is on
-        let mut target_charge_nominal = if self.is_on(&simtime) {
+        let mut target_charge_nominal = if self.is_on(simtime) {
             self.charge_level
                 [simtime.time_series_idx_days(self.start_day, Some(self.charge_calc_time))]
             .unwrap_or_default()
@@ -549,7 +545,7 @@ impl ChargeControl {
                             self.external_conditions.as_ref(),
                         ) {
                             let limit =
-                                self.get_limit_factor(external_conditions.air_temp(&simtime));
+                                self.get_limit_factor(external_conditions.air_temp(simtime));
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -571,7 +567,7 @@ impl ChargeControl {
                             self.external_conditions.as_ref(),
                         ) {
                             let limit =
-                                self.get_limit_factor(external_conditions.air_temp(&simtime));
+                                self.get_limit_factor(external_conditions.air_temp(simtime));
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -599,7 +595,7 @@ impl ChargeControl {
         &self,
         energy_demand: f64,
         base_temp: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> Option<f64> {
         // ugly, but this method cannot be called when control does not have HHRSH or Heat Battery logic type
         let heat_retention_data = if let Some(heat_retention_data) =
@@ -619,11 +615,11 @@ impl ChargeControl {
         demand.write().push_front(Some(energy_demand));
         if let Some(external_conditions) = self.external_conditions.as_ref() {
             future_ext_temp.write().push_front(Some(
-                external_conditions.air_temp_with_offset(&simtime, *steps_day),
+                external_conditions.air_temp_with_offset(simtime, *steps_day),
             ));
             past_ext_temp
                 .write()
-                .push_front(Some(external_conditions.air_temp(&simtime)));
+                .push_front(Some(external_conditions.air_temp(simtime)));
         }
 
         let future_hdh =
@@ -631,7 +627,7 @@ impl ChargeControl {
         let past_hdh =
             self.calculate_heating_degree_hours(past_ext_temp.read().as_ref(), base_temp);
 
-        let energy_to_store = if !self.is_on(&simtime) {
+        let energy_to_store = if !self.is_on(simtime) {
             Some(0.)
         } else {
             match (future_hdh, past_hdh) {
@@ -652,7 +648,7 @@ impl ChargeControl {
     ///Correct nominal/json temp_charge_cut with monthly table
     /// Arguments
     /// returns -- temp_charge_cut (corrected)
-    pub(crate) fn temp_charge_cut_corr(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn temp_charge_cut_corr(&self, simtime: Timestep) -> Option<f64> {
         if let Some(temp_charge_cut) = self.temp_charge_cut.as_ref() {
             let temp_charge_cut_delta =
                 if let Some(temp_charge_cut_delta) = self.temp_charge_cut_delta.as_ref() {
@@ -754,21 +750,21 @@ impl ChargeControl {
         self.obscure_error_reporter.report(anyhow!("Calculation of limiting factor linked to external sensor for automatic control failed.")).and_return(0.)
     }
 
-    pub fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
-        Some(self.is_on(simtime))
+    pub fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
+        Some(self.is_on(timestep))
     }
 
-    pub fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
-        if !self.charge_time_control.is_on(simtime) {
+    pub fn setpnt(&self, timestep: Timestep) -> Option<f64> {
+        if !self.charge_time_control.is_on(timestep) {
             None
         } else {
-            Some(self.target_charge(*simtime, None))
+            Some(self.target_charge(timestep, None))
         }
     }
 
     // In Python this is inherited from the BoolTimeControl class
-    pub fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.charge_time_control.is_on(simulation_time_iteration)
+    pub fn is_on(&self, timestep: Timestep) -> bool {
+        self.charge_time_control.is_on(timestep)
     }
 
     #[cfg(test)]
@@ -794,18 +790,18 @@ impl ChargeControlSetPointAdapter {
 
     delegate! {
         to self.0 {
-            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+            pub(crate) fn is_on(&self, timestep: Timestep) -> bool;
 
             #[call(is_on)]
             #[into]
-            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+            pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool>;
         }
     }
 
-    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> Option<f64> {
         self.0
-            .is_on(simtime)
-            .then(|| self.0.target_charge(*simtime, None))
+            .is_on(timestep)
+            .then(|| self.0.target_charge(timestep, None))
     }
 }
 
@@ -901,15 +897,15 @@ impl OnOffCostMinimisingTimeControl {
     }
 
     /// Return true if control will allow system to run
-    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    fn is_on(&self, timestep: Timestep) -> bool {
         self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
 
-    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, _timestep: Timestep) -> Option<bool> {
         None
     }
 
-    pub(crate) fn setpnt(&self, _timestep: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn setpnt(&self, _timestep: Timestep) -> Option<f64> {
         None
     }
 }
@@ -1000,21 +996,19 @@ impl RangeTimeControl {
         })
     }
 
-    fn schedule_idx(&self, simulation_time_iteration: &SimulationTimeIteration) -> usize {
-        simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step)
+    fn schedule_idx(&self, timestep: Timestep) -> usize {
+        timestep.time_series_idx(self.start_day, self.time_series_step)
     }
 
     fn find_setpnt(
         &self,
         t_idx: usize,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
         schedule: &ScheduleOrSetpointControl,
     ) -> Option<f64> {
         let setpnt = match schedule {
             ScheduleOrSetpointControl::Schedule(schedule) => schedule[t_idx],
-            ScheduleOrSetpointControl::Control(control) => {
-                control.setpnt(simulation_time_iteration)
-            }
+            ScheduleOrSetpointControl::Control(control) => control.setpnt(timestep),
         };
 
         match (setpnt, schedule) {
@@ -1044,22 +1038,11 @@ impl RangeTimeControl {
         }
     }
 
-    pub(crate) fn setpnt(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
         // Return setpoint for the current timestep
-        let schedule_idx = self.schedule_idx(simulation_time_iteration);
-        let setpnt_lower = self.find_setpnt(
-            schedule_idx,
-            simulation_time_iteration,
-            &self.schedule_lower,
-        );
-        let setpnt_upper = self.find_setpnt(
-            schedule_idx,
-            simulation_time_iteration,
-            &self.schedule_upper,
-        );
+        let schedule_idx = self.schedule_idx(timestep);
+        let setpnt_lower = self.find_setpnt(schedule_idx, timestep, &self.schedule_lower);
+        let setpnt_upper = self.find_setpnt(schedule_idx, timestep, &self.schedule_upper);
 
         if setpnt_lower.is_some() && setpnt_upper.is_some() && setpnt_lower > setpnt_upper {
             panic!("setpnt_lower cannot be greater than setpnt_upper");
@@ -1067,39 +1050,32 @@ impl RangeTimeControl {
         (setpnt_lower, setpnt_upper)
     }
 
-    pub(crate) fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
         // Return true if current time is inside specified time for heating/cooling
-        let idx = simulation_time_iteration.index;
+        let idx = timestep.index;
 
         // TODO can we avoid unwrap here? in_required_period should always return Some bool
         let setpnt_lower_is_set = match &self.schedule_lower {
             ScheduleOrSetpointControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
-            ScheduleOrSetpointControl::Control(control) => control
-                .in_required_period(simulation_time_iteration)
-                .unwrap(),
+            ScheduleOrSetpointControl::Control(control) => {
+                control.in_required_period(timestep).unwrap()
+            }
         };
 
         let setpnt_upper_is_set = match &self.schedule_upper {
             ScheduleOrSetpointControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
-            ScheduleOrSetpointControl::Control(control) => control
-                .in_required_period(simulation_time_iteration)
-                .unwrap(),
+            ScheduleOrSetpointControl::Control(control) => {
+                control.in_required_period(timestep).unwrap()
+            }
         };
 
         Some(setpnt_lower_is_set && setpnt_upper_is_set)
     }
 
     // this correlates to python's _is_on
-    fn internal_is_on(
-        &self,
-        t_idx: usize,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> bool {
-        let setpnt_lower = self.find_setpnt(t_idx, simulation_time_iteration, &self.schedule_lower);
-        let setpnt_upper = self.find_setpnt(t_idx, simulation_time_iteration, &self.schedule_upper);
+    fn internal_is_on(&self, t_idx: usize, timestep: Timestep) -> bool {
+        let setpnt_lower = self.find_setpnt(t_idx, timestep, &self.schedule_lower);
+        let setpnt_upper = self.find_setpnt(t_idx, timestep, &self.schedule_upper);
 
         if setpnt_upper.is_none() {
             return false;
@@ -1112,14 +1088,11 @@ impl RangeTimeControl {
             return false;
         }
 
-        self.internal_is_on(t_idx - 1, simulation_time_iteration)
+        self.internal_is_on(t_idx - 1, timestep)
     }
 
-    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.internal_is_on(
-            self.schedule_idx(simulation_time_iteration),
-            simulation_time_iteration,
-        )
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
+        self.internal_is_on(self.schedule_idx(timestep), timestep)
     }
 }
 
@@ -1136,42 +1109,27 @@ pub(crate) enum CompositeRangeTimeControl {
 }
 
 impl CompositeRangeTimeControl {
-    pub(crate) fn setpnt(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
         match self {
-            CompositeRangeTimeControl::Unified(control) => {
-                control.setpnt(simulation_time_iteration)
-            }
+            CompositeRangeTimeControl::Unified(control) => control.setpnt(timestep),
             CompositeRangeTimeControl::MinMax {
                 control_min,
                 control_max,
-            } => (
-                control_min.setpnt(simulation_time_iteration),
-                control_max.setpnt(simulation_time_iteration),
-            ),
+            } => (control_min.setpnt(timestep), control_max.setpnt(timestep)),
         }
     }
 
-    pub(crate) fn assume_system_on(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> bool {
+    pub(crate) fn assume_system_on(&self, timestep: Timestep) -> bool {
         match self {
-            CompositeRangeTimeControl::Unified(control) => control.is_on(simulation_time_iteration),
-            CompositeRangeTimeControl::MinMax { control_min, .. } => {
-                control_min.is_on(simulation_time_iteration)
-            }
+            CompositeRangeTimeControl::Unified(control) => control.is_on(timestep),
+            CompositeRangeTimeControl::MinMax { control_min, .. } => control_min.is_on(timestep),
         }
     }
 
-    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
         match self {
-            CompositeRangeTimeControl::Unified(control) => control.is_on(simulation_time_iteration),
-            CompositeRangeTimeControl::MinMax { control_min, .. } => {
-                control_min.is_on(simulation_time_iteration)
-            }
+            CompositeRangeTimeControl::Unified(control) => control.is_on(timestep),
+            CompositeRangeTimeControl::MinMax { control_min, .. } => control_min.is_on(timestep),
         }
     }
 }
@@ -1243,12 +1201,8 @@ impl SetpointTimeControl {
     ///
     /// (not including timesteps where system is only on due to min or max
     /// setpoint or advanced start)
-    pub(crate) fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        let schedule_idx =
-            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+    pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
+        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
         let setpnt = self.schedule[schedule_idx];
         Some(setpnt.is_some())
     }
@@ -1285,10 +1239,7 @@ impl SetpointTimeControl {
     }
 
     /// Return setpoint for the current timestep
-    pub(crate) fn setpnt(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<f64> {
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> Option<f64> {
         // hook for tests
         #[cfg(test)]
         {
@@ -1297,8 +1248,7 @@ impl SetpointTimeControl {
             }
         }
 
-        let schedule_idx =
-            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
         let mut setpnt = self.schedule[schedule_idx];
 
@@ -1352,7 +1302,7 @@ impl SetpointTimeControl {
     }
 
     /// Return true if control will allow system to run
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
         let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
         self.is_on_for_timestep_idx(schedule_idx)
@@ -1534,7 +1484,7 @@ impl SmartApplianceControl {
         t_idx: usize,
         demand: f64,
         energy_supply: &str,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         // convert demand from appliance usage event to average power over the demand series timestep
         // and add it to the series
@@ -1561,8 +1511,7 @@ impl SmartApplianceControl {
                     -battery.calculate_max_discharge(state_of_charge / max_capacity) * max_capacity;
 
                 // the maths here follows charge_discharge_battery() in ElectricBattery
-                let discharge_efficiency: f64 =
-                    battery.get_discharge_efficiency(simulation_time_iteration);
+                let discharge_efficiency: f64 = battery.get_discharge_efficiency(timestep);
                 let charge_utilised = min_of_2(
                     self.battery_states_of_charge[energy_supply][idx_24hr]
                         .load(Ordering::SeqCst)
@@ -1583,10 +1532,7 @@ impl SmartApplianceControl {
         }
     }
 
-    pub(crate) fn update_demand_buffer(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<()> {
+    pub(crate) fn update_demand_buffer(&self, simtime: Timestep) -> anyhow::Result<()> {
         let t_idx = simtime.index;
         let idx_24hr = t_idx % self.buffer_length;
         for (name, supply) in self.energy_supplies.iter() {
@@ -1699,17 +1645,13 @@ impl CombinationTimeControl {
     }
 
     /// Evaluate a single control
-    fn evaluate_control_is_on(&self, control_name: &str, simtime: SimulationTimeIteration) -> bool {
+    fn evaluate_control_is_on(&self, control_name: &str, simtime: Timestep) -> bool {
         let control = &self.controls[control_name];
-        control.is_on(&simtime)
+        control.is_on(simtime)
     }
 
     /// Evaluate a combination of controls
-    fn evaluate_combination_is_on(
-        &self,
-        combination_name: &str,
-        simtime: SimulationTimeIteration,
-    ) -> bool {
+    fn evaluate_combination_is_on(&self, combination_name: &str, simtime: Timestep) -> bool {
         let combination = &self.combinations[combination_name];
         let ControlCombination {
             operation,
@@ -1740,22 +1682,18 @@ impl CombinationTimeControl {
     }
 
     /// Evaluate a single control
-    fn evaluate_control_in_req_period(
-        &self,
-        control_name: &str,
-        simtime: SimulationTimeIteration,
-    ) -> bool {
+    fn evaluate_control_in_req_period(&self, control_name: &str, simtime: Timestep) -> bool {
         let control = &self.controls[control_name];
         match control {
-            TimeControl::OnOff(c) => c.is_on(&simtime),
-            TimeControl::OnOffCostMinimising(c) => c.is_on(&simtime),
+            TimeControl::OnOff(c) => c.is_on(simtime),
+            TimeControl::OnOffCostMinimising(c) => c.is_on(simtime),
             TimeControl::Setpoint(c) => c
-                .in_required_period(&simtime)
+                .in_required_period(simtime)
                 .expect("SetpointTimeControl in_required_period() method will always return Some"),
             TimeControl::Combination(_) => {
                 unreachable!("CombinationTimeControl can't contain another CombinationTimeControl")
             }
-            TimeControl::Charge(c) => c.is_on(&simtime),
+            TimeControl::Charge(c) => c.is_on(simtime),
         }
     }
 
@@ -1765,7 +1703,7 @@ impl CombinationTimeControl {
     fn evaluate_combination_in_req_period(
         &self,
         combination_name: &str,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<bool> {
         let combination = &self.combinations[combination_name];
         let ControlCombination {
@@ -1847,17 +1785,13 @@ impl CombinationTimeControl {
     }
 
     /// Evaluate a single control
-    fn evaluate_control_setpnt(
-        &self,
-        control_name: &str,
-        simtime: SimulationTimeIteration,
-    ) -> SetpointOrBoolean {
+    fn evaluate_control_setpnt(&self, control_name: &str, simtime: Timestep) -> SetpointOrBoolean {
         let control = &self.controls[control_name];
         match control {
-            TimeControl::OnOff(c) => c.is_on(&simtime).into(),
-            TimeControl::OnOffCostMinimising(c) => c.is_on(&simtime).into(),
-            TimeControl::Charge(c) => c.is_on(&simtime).into(),
-            TimeControl::Setpoint(c) => c.setpnt(&simtime).into(),
+            TimeControl::OnOff(c) => c.is_on(simtime).into(),
+            TimeControl::OnOffCostMinimising(c) => c.is_on(simtime).into(),
+            TimeControl::Charge(c) => c.is_on(simtime).into(),
+            TimeControl::Setpoint(c) => c.setpnt(simtime).into(),
             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
         }
     }
@@ -1866,7 +1800,7 @@ impl CombinationTimeControl {
     fn evaluate_combination_setpnt(
         &self,
         combination_name: &str,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<SetpointOrBoolean> {
         let combination = &self.combinations[combination_name];
         let ControlCombination {
@@ -2011,7 +1945,7 @@ impl CombinationTimeControl {
     fn evaluate_control_target_charge(
         &self,
         control_name: &str,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         temp_air: Option<f64>,
     ) -> Option<f64> {
         let control = &self.controls[control_name];
@@ -2028,7 +1962,7 @@ impl CombinationTimeControl {
     fn evaluate_combination_target_charge(
         &self,
         combination_name: &str,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         temp_air: Option<f64>,
     ) -> anyhow::Result<f64> {
         let combination = &self.combinations[combination_name];
@@ -2065,12 +1999,8 @@ impl CombinationTimeControl {
     }
 
     #[cfg(test)]
-    fn target_charge(
-        &self,
-        simtime: &SimulationTimeIteration,
-        temp_air: Option<f64>,
-    ) -> anyhow::Result<f64> {
-        self.evaluate_combination_target_charge(MAIN_REFERENCE, *simtime, temp_air)
+    fn target_charge(&self, timestep: Timestep, temp_air: Option<f64>) -> anyhow::Result<f64> {
+        self.evaluate_combination_target_charge(MAIN_REFERENCE, timestep, temp_air)
     }
 
     #[cfg(test)]
@@ -2083,13 +2013,13 @@ impl CombinationTimeControl {
         self.controls = controls;
     }
 
-    pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
-        self.evaluate_combination_in_req_period(MAIN_REFERENCE, *simtime)
+    pub(crate) fn in_required_period(&self, simtime: Timestep) -> Option<bool> {
+        self.evaluate_combination_in_req_period(MAIN_REFERENCE, simtime)
             .ok()
     }
 
-    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
-        self.evaluate_combination_setpnt("main", *simtime)
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> Option<f64> {
+        self.evaluate_combination_setpnt("main", timestep)
             .ok()
             .and_then(|x| {
                 if let SetpointOrBoolean::Setpoint(Some(x)) = x {
@@ -2100,8 +2030,8 @@ impl CombinationTimeControl {
             })
     }
 
-    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
-        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
+    pub(crate) fn is_on(&self, timestep: Timestep) -> bool {
+        self.evaluate_combination_is_on(MAIN_REFERENCE, timestep)
     }
 }
 
@@ -2142,11 +2072,11 @@ impl MockControl {
         }
     }
 
-    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, _timestep: Timestep) -> Option<bool> {
         None
     }
 
-    pub(crate) fn is_on(&self, _timestep: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, _timestep: Timestep) -> bool {
         if let Some(is_on) = self.canned_is_on {
             is_on
         } else {
@@ -2154,7 +2084,7 @@ impl MockControl {
         }
     }
 
-    pub(crate) fn setpnt(&self, _timestep: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn setpnt(&self, _timestep: Timestep) -> Option<f64> {
         self.canned_setpnt
     }
 }
@@ -2237,7 +2167,7 @@ mod tests {
                 OnOffTimeControl::new(schedule.iter().map(|&v| Some(v)).collect_vec(), 0, 1.0);
 
             for iteration in simulation_time_iterator {
-                assert_eq!(time_control.is_on(&iteration), schedule[iteration.index]);
+                assert_eq!(time_control.is_on(iteration), schedule[iteration.index]);
             }
         }
     }
@@ -2291,7 +2221,7 @@ mod tests {
             let simulation_time_iterator = SimulationTime::new(0.0, 48.0, 1.0).iter();
             for iteration in simulation_time_iterator {
                 pretty_assertions::assert_eq!(
-                    cost_minimising_ctrl.is_on(&iteration),
+                    cost_minimising_ctrl.is_on(iteration),
                     resulting_schedule[iteration.index]
                 );
             }
@@ -2390,38 +2320,38 @@ mod tests {
             let expected = [true, false, false, true, false, true, true, true];
             for t_it in simulation_time_iterator {
                 assert_eq!(
-                    time_control.in_required_period(&t_it).unwrap(),
+                    time_control.in_required_period(t_it).unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with no min or max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_min.in_required_period(&t_it).unwrap(),
+                    time_control_min.in_required_period(t_it).unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with min set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_max.in_required_period(&t_it).unwrap(),
+                    time_control_max.in_required_period(t_it).unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_min_max.in_required_period(&t_it).unwrap(),
+                    time_control_min_max.in_required_period(t_it).unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with min and max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_advstart.in_required_period(&t_it).unwrap(),
+                    time_control_advstart.in_required_period(t_it).unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with advanced start, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
                     time_control_advstart_min_max
-                        .in_required_period(&t_it)
+                        .in_required_period(t_it)
                         .unwrap(),
                     expected[t_it.index],
                     "incorrect in_required_period value returned for control with advanced start, iteration {}",
@@ -2441,36 +2371,36 @@ mod tests {
             time_control_advstart_min_max: SetpointTimeControl,
         ) {
             for t_it in simulation_time_iterator {
-                assert_eq!(time_control.is_on(&t_it),
+                assert_eq!(time_control.is_on(t_it),
                            [true, false, false, true, false, true, true, true][t_it.index],
                            "incorrect is_on value returned for control with no min or max set, iteration {}",
                            t_it.index + 1 );
                 assert_eq!(
-                    time_control_min.is_on(&t_it),
+                    time_control_min.is_on(t_it),
                     true, // Should always be true for this type of control
                     "incorrect is_on value returned for control with min set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_max.is_on(&t_it),
+                    time_control_max.is_on(t_it),
                     true, // Should always be true for this type of control
                     "incorrect is_on value returned for control with max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_min_max.is_on(&t_it),
+                    time_control_min_max.is_on(t_it),
                     true, // Should always be true for this type of control
                     "incorrect is_on value returned for control with min and max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_advstart.is_on(&t_it),
+                    time_control_advstart.is_on(t_it),
                     [true, false, true, true, true, true, true, true][t_it.index],
                     "incorrect is_on value returned for control with advanced start, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_advstart_min_max.is_on(&t_it),
+                    time_control_advstart_min_max.is_on(t_it),
                     true,
                     "incorrect is_on value returned for control with advanced start and min/max, iteration {}",
                     t_it.index + 1
@@ -2482,11 +2412,11 @@ mod tests {
         fn test_is_on_lookahead(simulation_time_iterator: SimulationTimeIterator) {
             let schedule = vec![None; 24];
             let control = create_time_control(Some(schedule), None, Some(30.));
-            assert!(!control.is_on(&simulation_time_iterator.current_iteration()));
+            assert!(!control.is_on(simulation_time_iterator.current_iteration()));
 
             let schedule = vec![Some(20.); 24];
             let control = create_time_control(Some(schedule), None, None);
-            assert!(control.is_on(&simulation_time_iterator.current_iteration()));
+            assert!(control.is_on(simulation_time_iterator.current_iteration()));
         }
 
         #[rstest]
@@ -2551,37 +2481,37 @@ mod tests {
             ];
             for t_it in simulation_time_iterator {
                 assert_eq!(
-                    time_control.setpnt(&t_it),
+                    time_control.setpnt(t_it),
                     default_schedule()[t_it.index],
                     "incorrect schedule returned for control with no min or max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_min.setpnt(&t_it),
+                    time_control_min.setpnt(t_it),
                     results_min[t_it.index],
                     "incorrect schedule returned for control with min set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_max.setpnt(&t_it),
+                    time_control_max.setpnt(t_it),
                     results_max[t_it.index],
                     "incorrect schedule returned for control with max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_min_max.setpnt(&t_it),
+                    time_control_min_max.setpnt(t_it),
                     results_minmax[t_it.index],
                     "incorrect schedule returned for control with min and max set, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_advstart.setpnt(&t_it),
+                    time_control_advstart.setpnt(t_it),
                     results_advstart[t_it.index],
                     "incorrect schedule returned for control with advanced start, iteration {}",
                     t_it.index + 1
                 );
                 assert_eq!(
-                    time_control_advstart_min_max.setpnt(&t_it),
+                    time_control_advstart_min_max.setpnt(t_it),
                     results_advstart_minmax[t_it.index],
                     "incorrect schedule returned for control with advanced start and min and max set, iteration {}",
                     t_it.index + 1
@@ -2594,14 +2524,14 @@ mod tests {
             let schedule = vec![None; 24];
             let control = create_time_control(Some(schedule), None, Some(30.));
             assert!(control
-                .setpnt(&simulation_time_iterator.current_iteration())
+                .setpnt(simulation_time_iterator.current_iteration())
                 .is_none());
 
             let schedule = vec![Some(20.); 24];
             let control = create_time_control(Some(schedule), None, Some(30.));
             assert_eq!(
                 control
-                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .setpnt(simulation_time_iterator.current_iteration())
                     .unwrap(),
                 20.
             );
@@ -2617,7 +2547,7 @@ mod tests {
             );
             assert_eq!(
                 control
-                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .setpnt(simulation_time_iterator.current_iteration())
                     .unwrap(),
                 10.
             );
@@ -2636,7 +2566,7 @@ mod tests {
             );
             assert_eq!(
                 control
-                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .setpnt(simulation_time_iterator.current_iteration())
                     .unwrap(),
                 20.
             );
@@ -2653,7 +2583,7 @@ mod tests {
             );
             assert_eq!(
                 control
-                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .setpnt(simulation_time_iterator.current_iteration())
                     .unwrap(),
                 10.
             );
@@ -2819,7 +2749,7 @@ mod tests {
 
             for t_it in simulation_time_iterator() {
                 assert_eq!(
-                    range_time_control.in_required_period(&t_it).unwrap(),
+                    range_time_control.in_required_period(t_it).unwrap(),
                     results[t_it.index]
                 );
             }
@@ -2838,7 +2768,7 @@ mod tests {
 
             for t_it in simulation_time_iterator() {
                 assert_eq!(
-                    range_time_control.is_on(&t_it),
+                    range_time_control.is_on(t_it),
                     [true, false, false, true, false, true, true, true][t_it.index]
                 );
             }
@@ -2856,7 +2786,7 @@ mod tests {
             );
 
             for t_it in simulation_time_iterator() {
-                assert!(!range_time_control.is_on(&t_it))
+                assert!(!range_time_control.is_on(t_it))
             }
         }
 
@@ -2891,7 +2821,7 @@ mod tests {
 
             let expected = [true, true, false, true, false, true, true, true];
             for t_it in simulation_time_iterator() {
-                assert_eq!(range_time_control.is_on(&t_it), expected[t_it.index])
+                assert_eq!(range_time_control.is_on(t_it), expected[t_it.index])
             }
         }
 
@@ -2914,7 +2844,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time_iterator().enumerate() {
                 assert_eq!(
-                    range_time_control.setpnt(&t_it),
+                    range_time_control.setpnt(t_it),
                     (expected_lower[t_idx], expected_upper[t_idx])
                 );
             }
@@ -2986,10 +2916,10 @@ mod tests {
             );
 
             assert_eq!(
-                range_time_control.setpnt(&SimulationTimeIteration {
+                range_time_control.setpnt(Timestep {
                     index: 0,
                     time: 0.0,
-                    timestep: 1.0
+                    step: 1.0
                 }),
                 (Some(20.0), Some(22.0))
             );
@@ -3011,10 +2941,10 @@ mod tests {
             );
 
             assert_eq!(
-                range_time_control.setpnt(&SimulationTimeIteration {
+                range_time_control.setpnt(Timestep {
                     index: 0,
                     time: 0.0,
-                    timestep: 1.0
+                    step: 1.0
                 }),
                 (None, None)
             );
@@ -3559,7 +3489,7 @@ mod tests {
         fn test_is_on(charge_control_1: ChargeControl) {
             for (t_idx, t_it) in simulation_time().iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.is_on(&t_it),
+                    charge_control_1.is_on(t_it),
                     schedule()[t_idx],
                     "incorrect schedule returned"
                 );
@@ -3584,7 +3514,7 @@ mod tests {
             .unwrap();
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
-                assert_eq!(charge_control_1.is_on(&t_it), schedule[t_idx]);
+                assert_eq!(charge_control_1.is_on(t_it), schedule[t_idx]);
             }
         }
 
@@ -3794,16 +3724,12 @@ mod tests {
             charge_control_1: ChargeControl,
             charge_control_3: ChargeControl,
         ) {
-            let simulation_time_iteration = simulation_time().iter().next().unwrap();
+            let timestep = simulation_time().iter().next().unwrap();
             assert_eq!(
-                charge_control_1
-                    .temp_charge_cut_corr(simulation_time_iteration)
-                    .unwrap(),
+                charge_control_1.temp_charge_cut_corr(timestep).unwrap(),
                 15.5
             );
-            assert!(charge_control_3
-                .temp_charge_cut_corr(simulation_time_iteration)
-                .is_none())
+            assert!(charge_control_3.temp_charge_cut_corr(timestep).is_none())
         }
 
         #[rstest]
@@ -3945,10 +3871,10 @@ mod tests {
 
         #[rstest]
         fn test_in_required_period_delegates_to_is_on() {
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             };
 
             let schedule = [true; 8];
@@ -3960,7 +3886,7 @@ mod tests {
             )
             .unwrap();
 
-            let actual = charge_control.in_required_period(&simulation_time_iteration);
+            let actual = charge_control.in_required_period(timestep);
             assert_eq!(actual, Some(true));
 
             let schedule = [false; 8];
@@ -3973,16 +3899,16 @@ mod tests {
             )
             .unwrap();
 
-            let actual = charge_control.in_required_period(&simulation_time_iteration);
+            let actual = charge_control.in_required_period(timestep);
             assert_eq!(actual, Some(false));
         }
 
         #[rstest]
         fn test_setpnt_returns_target_charge_when_on() {
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             };
 
             let schedule = [true; 8];
@@ -3994,18 +3920,18 @@ mod tests {
             )
             .unwrap();
 
-            let target_charge = charge_control.target_charge(simulation_time_iteration, None);
-            let setpnt = charge_control.setpnt(&simulation_time_iteration);
+            let target_charge = charge_control.target_charge(timestep, None);
+            let setpnt = charge_control.setpnt(timestep);
 
             assert_eq!(setpnt, Some(target_charge));
         }
 
         #[rstest]
         fn test_setpnt_returns_none_when_off() {
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             };
 
             let schedule = [false; 8];
@@ -4017,7 +3943,7 @@ mod tests {
             )
             .unwrap();
 
-            let setpnt = charge_control.setpnt(&simulation_time_iteration);
+            let setpnt = charge_control.setpnt(timestep);
 
             assert!(setpnt.is_none());
         }
@@ -4704,7 +4630,7 @@ mod tests {
         ) {
             for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
                 assert_eq!(
-                    combination_control_on_off.is_on(&t_it),
+                    combination_control_on_off.is_on(t_it),
                     [false, false, false, false, false, false, true, false][t_idx]
                 );
             }
@@ -4717,7 +4643,7 @@ mod tests {
         ) {
             for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
                 assert_eq!(
-                    combination_control_setpoint.setpnt(&t_it),
+                    combination_control_setpoint.setpnt(t_it),
                     [None, Some(52.0), None, None, None, None, Some(52.0), None][t_idx]
                 );
             }
@@ -4730,7 +4656,7 @@ mod tests {
         ) {
             for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
                 assert_eq!(
-                    combination_control_req.in_required_period(&t_it),
+                    combination_control_req.in_required_period(t_it),
                     Some([true, false, false, true, true, false, true, true][t_idx]),
                     "incorrect required period returned on iteration {}",
                     t_idx + 1
@@ -4745,7 +4671,7 @@ mod tests {
         ) {
             for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
                 assert_eq!(
-                    combination_control_on_off_cost.is_on(&t_it),
+                    combination_control_on_off_cost.is_on(t_it),
                     [false, true, false, false, false, false, true, false][t_idx]
                 );
             }
@@ -4762,14 +4688,14 @@ mod tests {
             for (t_idx, t_it) in simtime.iter().enumerate() {
                 assert_eq!(
                     combination_control_target_charge
-                        .target_charge(&t_it, None)
+                        .target_charge(t_it, None)
                         .unwrap(),
                     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx]
                 );
             }
 
             assert!(combination_control_target_charge1
-                .target_charge(&simtime.iter().current_iteration(), None)
+                .target_charge(simtime.iter().current_iteration(), None)
                 .is_err());
         }
 
@@ -4834,7 +4760,7 @@ mod tests {
                 let expected_results = [false, true, true, true];
 
                 for (t_idx, t_it) in simtime_short.iter().enumerate() {
-                    let result = combination_control.is_on(&t_it);
+                    let result = combination_control.is_on(t_it);
                     assert_eq!(result, expected_results[t_idx]);
                 }
             }

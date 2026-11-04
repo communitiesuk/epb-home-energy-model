@@ -6,7 +6,7 @@ use crate::core::controls::time_control::{
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{
     water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
@@ -359,7 +359,7 @@ impl BoilerServiceWaterCombi {
     pub fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.;
         self.combi_loss.store(0., Ordering::SeqCst);
@@ -390,7 +390,7 @@ impl BoilerServiceWaterCombi {
             ..
         } = &self.combi_boiler_config
         {
-            control.is_on(&simtime)
+            control.is_on(simtime)
         } else {
             true
         };
@@ -569,8 +569,8 @@ impl BoilerServiceWaterRegular {
     }
 
     /// Return setpoint (not necessarily temperature)
-    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt(simtime)
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
+        self.control.setpnt(timestep)
     }
 
     /// Demand energy (in kWh) from the boiler
@@ -595,7 +595,7 @@ impl BoilerServiceWaterRegular {
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
         ignore_standard_ctrl: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
@@ -642,7 +642,7 @@ impl BoilerServiceWaterRegular {
         _temp_return: f64,
         time_elapsed_hp: Option<f64>,
         ignore_standard_ctrl: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> f64 {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
         let is_on = self.is_on(simtime) || ignore_standard_ctrl;
@@ -653,8 +653,8 @@ impl BoilerServiceWaterRegular {
         self.boiler.energy_output_max(None, time_elapsed_hp)
     }
 
-    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(&simtime)
+    fn is_on(&self, simtime: Timestep) -> bool {
+        self.control.is_on(simtime)
     }
 }
 
@@ -679,12 +679,12 @@ impl BoilerServiceSpace {
         }
     }
 
-    pub fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
-        self.control.setpnt(&simtime)
+    pub fn temp_setpnt(&self, simtime: Timestep) -> Option<f64> {
+        self.control.setpnt(simtime)
     }
 
-    pub fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
-        self.control.in_required_period(&simtime)
+    pub fn in_required_period(&self, simtime: Timestep) -> Option<bool> {
+        self.control.in_required_period(simtime)
     }
 
     pub fn demand_energy(
@@ -696,7 +696,7 @@ impl BoilerServiceSpace {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let time_start = time_start.unwrap_or(0.);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
@@ -730,7 +730,7 @@ impl BoilerServiceSpace {
         _temp_return_feed: f64,
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> f64 {
         if !self.is_on(simtime) {
             0.0
@@ -739,8 +739,8 @@ impl BoilerServiceSpace {
         }
     }
 
-    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(&simtime)
+    fn is_on(&self, simtime: Timestep) -> bool {
+        self.control.is_on(simtime)
     }
 }
 
@@ -1269,7 +1269,7 @@ impl Boiler {
         energy_output_required: f64,
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.0);
         let time_available = self.time_available(time_start, time_elapsed_hp);
@@ -1291,7 +1291,7 @@ impl Boiler {
         temp_return_feed: f64,
         energy_output_required: f64,
         time_available: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let energy_output_provided =
             self.calc_energy_output_provided(energy_output_required, time_available);
@@ -1336,7 +1336,7 @@ impl Boiler {
         };
 
         // use weather temperature at timestep
-        let outside_temp = self.external_conditions.air_temp(&simtime);
+        let outside_temp = self.external_conditions.air_temp(simtime);
 
         // A boiler’s efficiency reduces when installed outside due to an increase in case heat loss.
         // The following adjustment is made when the boiler is located outside
@@ -1531,7 +1531,7 @@ impl Boiler {
 
     /// Calculate boiler fuel demand for all services (excl. auxiliary),
     /// and request this from relevant EnergySupplyConnection
-    fn fuel_demand(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    fn fuel_demand(&self, simtime: Timestep) -> anyhow::Result<()> {
         let service_results = self.service_results.read();
 
         for service_data in service_results.iter() {
@@ -1775,10 +1775,10 @@ impl Boiler {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub(crate) fn timestep_end(&mut self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&mut self, simtime: Timestep) -> anyhow::Result<()> {
         self.fuel_demand(simtime)?;
 
-        let timestep = simtime.timestep;
+        let timestep = simtime.step;
         let time_remaining_current_timestep = timestep
             - self
                 .total_time_running_current_timestep
@@ -2904,7 +2904,7 @@ mod tests {
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterRegular,
         };
-        use crate::core::simulation_time::{SimulationTime, SimulationTimeIteration};
+        use crate::core::simulation_time::{SimulationTime, Timestep};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
@@ -2993,24 +2993,24 @@ mod tests {
         #[rstest]
         fn test_is_on_with_control_on(boiler_service: BoilerServiceWaterRegular) {
             // Python uses MagicMock for the control - we can simulate control being off using the correct simulation time iteration according to the control schedule
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 0., // control is on at this time
-                timestep: 1.,
+                step: 1.,
             };
-            assert!(boiler_service.is_on(simulation_time_iteration));
+            assert!(boiler_service.is_on(timestep));
         }
 
         #[rstest]
         // more accurate name would be test_is_off_with_control_off
         fn test_is_on_with_control_off(boiler_service: BoilerServiceWaterRegular) {
             // Python uses MagicMock for the control - we can simulate control being off using the correct simulation time iteration according to the control schedule
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 2., // control is off at this time
-                timestep: 1.,
+                step: 1.,
             };
-            assert!(!boiler_service.is_on(simulation_time_iteration));
+            assert!(!boiler_service.is_on(timestep));
         }
 
         #[rstest]
@@ -3049,7 +3049,7 @@ mod tests {
             simulation_time: SimulationTime,
         ) {
             for t_it in simulation_time.iter() {
-                pretty_assertions::assert_eq!(boiler_service.setpnt(&t_it), (Some(52.), Some(60.)));
+                pretty_assertions::assert_eq!(boiler_service.setpnt(t_it), (Some(52.), Some(60.)));
             }
         }
 
@@ -3061,19 +3061,10 @@ mod tests {
             boiler_service: BoilerServiceWaterRegular,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let timestep = simulation_time.iter().next().unwrap();
             assert_eq!(
                 boiler_service
-                    .demand_energy(
-                        100.,
-                        Some(20.),
-                        Some(20.),
-                        None,
-                        None,
-                        None,
-                        None,
-                        simulation_time_iteration
-                    )
+                    .demand_energy(100., Some(20.), Some(20.), None, None, None, None, timestep)
                     .unwrap(),
                 (24., None)
             );
@@ -3084,18 +3075,9 @@ mod tests {
             boiler_service: BoilerServiceWaterRegular,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let timestep = simulation_time.iter().next().unwrap();
             assert!(boiler_service
-                .demand_energy(
-                    100.,
-                    Some(20.),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    simulation_time_iteration
-                )
+                .demand_energy(100., Some(20.), None, None, None, None, None, timestep)
                 .is_err());
         }
 
@@ -3104,23 +3086,14 @@ mod tests {
             // Python uses MagicMock for the control -
             // we can simulate control being off using the correct simulation time iteration
             // according to the control schedule
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 2., // control is off at this time
-                timestep: 1.,
+                step: 1.,
             };
             assert_eq!(
                 boiler_service
-                    .demand_energy(
-                        100.,
-                        Some(20.),
-                        Some(20.),
-                        None,
-                        None,
-                        None,
-                        None,
-                        simulation_time_iteration
-                    )
+                    .demand_energy(100., Some(20.), Some(20.), None, None, None, None, timestep)
                     .unwrap(),
                 (0., None)
             );
@@ -3131,9 +3104,9 @@ mod tests {
             boiler_service: BoilerServiceWaterRegular,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let timestep = simulation_time.iter().next().unwrap();
             assert_eq!(
-                boiler_service.energy_output_max(20., 20., None, None, simulation_time_iteration),
+                boiler_service.energy_output_max(20., 20., None, None, timestep),
                 24.
             );
         }
@@ -3147,9 +3120,8 @@ mod tests {
             boiler_service: BoilerServiceWaterRegular,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
-            let energy_max =
-                boiler_service.energy_output_max(55., 30., None, None, simulation_time_iteration);
+            let timestep = simulation_time.iter().next().unwrap();
+            let energy_max = boiler_service.energy_output_max(55., 30., None, None, timestep);
             let energy_delivered = boiler_service
                 .demand_energy(
                     1.0e6,
@@ -3159,7 +3131,7 @@ mod tests {
                     None,
                     Some(false),
                     None,
-                    simulation_time_iteration,
+                    timestep,
                 )
                 .unwrap();
             assert_eq!(energy_max, 24.); // rated power 24 kW over the 1 h timestep
@@ -3170,13 +3142,13 @@ mod tests {
         fn test_energy_output_max_with_control_off(boiler_service: BoilerServiceWaterRegular) {
             // Python uses MagicMock for the control - we can simulate control being off using the
             // correct simulation time iteration according to the control schedule
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 2., // control is off at this time
-                timestep: 1.,
+                step: 1.,
             };
             assert_eq!(
-                boiler_service.energy_output_max(20., 20., None, None, simulation_time_iteration),
+                boiler_service.energy_output_max(20., 20., None, None, timestep),
                 0.
             );
         }
@@ -3192,20 +3164,14 @@ mod tests {
             // Python uses a Control Mock with a return value of false for is_on
             // Instead, we simulate the control being off by using a simulation time iteration
             // when the control is off
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 2., // control is off at this time
-                timestep: 1.,
+                step: 1.,
             };
 
             assert_eq!(
-                boiler_service.energy_output_max(
-                    20.,
-                    20.,
-                    None,
-                    Some(true),
-                    simulation_time_iteration
-                ),
+                boiler_service.energy_output_max(20., 20., None, Some(true), timestep),
                 24.
             );
             assert_eq!(
@@ -3218,7 +3184,7 @@ mod tests {
                         None,
                         None,
                         Some(true),
-                        simulation_time_iteration,
+                        timestep,
                     )
                     .unwrap()
                     .0,
@@ -3235,7 +3201,7 @@ mod tests {
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceSpace,
         };
-        use crate::core::simulation_time::{SimulationTime, SimulationTimeIteration};
+        use crate::core::simulation_time::{SimulationTime, Timestep};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_ulps_eq;
         use parking_lot::RwLock;
@@ -3324,23 +3290,23 @@ mod tests {
 
         #[rstest]
         fn test_is_on_with_control_on(boiler_service: BoilerServiceSpace) {
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             };
-            assert!(boiler_service.is_on(simulation_time_iteration));
+            assert!(boiler_service.is_on(timestep));
         }
 
         #[rstest]
         // more accurate name would be test_is_off_with_control_off
         fn test_is_on_with_control_off(boiler_service: BoilerServiceSpace) {
-            let simulation_time_iteration = SimulationTimeIteration {
+            let timestep = Timestep {
                 index: 0,
                 time: 2.,
-                timestep: 1.,
+                step: 1.,
             };
-            assert!(!boiler_service.is_on(simulation_time_iteration));
+            assert!(!boiler_service.is_on(timestep));
         }
 
         #[rstest]

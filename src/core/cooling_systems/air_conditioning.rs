@@ -2,7 +2,7 @@ use super::space_cool_system_base::SpaceCoolSystem;
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 
 /// This module provides objects to air conditioning.
 
@@ -46,15 +46,12 @@ impl AirConditioning {
 }
 
 impl SpaceCoolSystem for AirConditioning {
-    fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        self.control.setpnt(simulation_time_iteration)
+    fn temp_setpnt(&self, timestep: Timestep) -> Option<f64> {
+        self.control.setpnt(timestep)
     }
 
-    fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        self.control.in_required_period(simulation_time_iteration)
+    fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
+        self.control.in_required_period(timestep)
     }
 
     fn frac_convective(&self) -> f64 {
@@ -65,11 +62,11 @@ impl SpaceCoolSystem for AirConditioning {
         0.0
     }
 
-    fn demand_energy(&self, cooling_demand: f64, simtime: SimulationTimeIteration) -> f64 {
+    fn demand_energy(&self, cooling_demand: f64, timestep: Timestep) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        let cooling_supplied = if self.control.is_on(&simtime) {
+        let cooling_supplied = if self.control.is_on(timestep) {
             max_of_2(
                 cooling_demand,
                 -self.cooling_capacity_in_kw * self.simulation_timestep,
@@ -79,7 +76,7 @@ impl SpaceCoolSystem for AirConditioning {
         };
 
         self.energy_supply_connection
-            .demand_energy(-cooling_supplied / self.efficiency, simtime.index)
+            .demand_energy(-cooling_supplied / self.efficiency, timestep.index)
             .unwrap();
 
         cooling_supplied
@@ -169,7 +166,7 @@ mod tests {
         let (aircon, _) = aircon;
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                aircon.temp_setpnt(&t_it),
+                aircon.temp_setpnt(t_it),
                 [Some(21.0), Some(21.0), None, Some(21.0)][t_idx]
             );
         }
@@ -183,7 +180,7 @@ mod tests {
         let (aircon, _) = aircon;
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                aircon.in_required_period(&t_it).unwrap(),
+                aircon.in_required_period(t_it).unwrap(),
                 [true, true, false, true][t_idx]
             );
         }

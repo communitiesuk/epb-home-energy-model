@@ -2,7 +2,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::errors::NotImplementedError;
 use crate::input::FuelType;
 use anyhow::{anyhow, bail};
@@ -268,7 +268,7 @@ impl EnergySupply {
     pub(crate) fn get_battery_charge_efficiency(
         &self,
         battery: Option<Arc<ElectricBattery>>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
@@ -290,7 +290,7 @@ impl EnergySupply {
     pub(crate) fn get_battery_discharge_efficiency(
         &self,
         battery: Option<Arc<ElectricBattery>>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
@@ -592,7 +592,7 @@ impl EnergySupply {
     pub(crate) fn is_exporting_to_grid(
         &self,
         battery: &ElectricBattery,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(bool, Option<f64>, bool)> {
         let month = simtime.current_month().ok_or_else(|| {
             anyhow!("Month could not be resolved for current simulation timestep.")
@@ -657,7 +657,7 @@ impl EnergySupply {
     pub(crate) fn is_charging_from_grid(
         &self,
         battery: &ElectricBattery,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(bool, Option<f64>, bool)> {
         // TODO (from Python): Additional logic for grid charging decision
         //      Negative prices - Priority over PV? That would mean calling the function twice
@@ -719,7 +719,7 @@ impl EnergySupply {
 
     pub(crate) fn calc_energy_import_from_grid_to_battery(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<()> {
         let mut total_charge = 0.;
         let mut total_max_capacity = 0.;
@@ -728,7 +728,7 @@ impl EnergySupply {
         // Connection-level budget: total import power is shared across all batteries
         let mut remaining_import_energy = self
             .power_limit_battery_import
-            .map(|power_limit_battery_import| power_limit_battery_import * simtime.timestep);
+            .map(|power_limit_battery_import| power_limit_battery_import * simtime.step);
 
         for battery in &self.get_batteries()? {
             // Current conditions of the battery
@@ -781,7 +781,7 @@ impl EnergySupply {
 
     pub(crate) fn calc_energy_export_from_battery_to_grid(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<()> {
         if !self.is_export_capable {
             return Ok(());
@@ -802,7 +802,7 @@ impl EnergySupply {
         let mut remaining_export_energy = self.power_limit_export.map(|power_limit_export| {
             max_of_2(
                 0.,
-                power_limit_export * simtime.timestep
+                power_limit_export * simtime.step
                     + self.supply_surplus[t_idx].load(Ordering::SeqCst),
             )
         });
@@ -862,10 +862,7 @@ impl EnergySupply {
 
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
-    pub fn calc_energy_import_export_betafactor(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<()> {
+    pub fn calc_energy_import_export_betafactor(&self, simtime: Timestep) -> anyhow::Result<()> {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -964,7 +961,7 @@ impl EnergySupply {
                 // exported nor stored, having already been offered to self-consumption,
                 // battery and diverter above. Battery discharge later in the timestep shares
                 // this same limit (see calc_energy_export_from_battery_to_grid).
-                let max_energy_export = power_limit_export * simtime.timestep;
+                let max_energy_export = power_limit_export * simtime.step;
                 let surplus_before_cap = supply_surplus;
                 supply_surplus = max_of_2(supply_surplus, -max_energy_export);
                 // Curtailed generation: the share that could be neither used nor exported.
@@ -1004,7 +1001,7 @@ impl EnergySupply {
         &self,
         diverter: Arc<RwLock<dyn SurplusDiverting>>,
         supply_surplus: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let diverted = diverter.read().divert_surplus(supply_surplus, simtime)?;
         self.energy_diverted
@@ -1021,7 +1018,7 @@ impl EnergySupply {
         battery: Arc<ElectricBattery>,
         supply_surplus: f64,
         demand_not_met: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         // See if the battery can deal with excess supply/demand for this timestep
         // supply_surplus is -ve by convention and demand_not_met is +ve
@@ -1685,7 +1682,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             true,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions),
         );
 
@@ -1732,7 +1729,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             true,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions.clone()),
         );
         let battery_b = ElectricBattery::new(
@@ -1745,7 +1742,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             true,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions),
         );
 
@@ -1818,7 +1815,7 @@ mod tests {
                 BatteryLocation::Inside,
                 true,
                 true,
-                simtime.current_iteration().timestep,
+                simtime.current_iteration().step,
                 Arc::new(external_conditions),
             );
 
@@ -1923,7 +1920,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             false,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions),
         );
 
@@ -1977,7 +1974,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             false,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions.clone()),
         );
         let battery_b = ElectricBattery::new(
@@ -1990,7 +1987,7 @@ mod tests {
             BatteryLocation::Inside,
             true,
             false,
-            simulation_time.iter().current_iteration().timestep,
+            simulation_time.iter().current_iteration().step,
             Arc::new(external_conditions),
         );
 
@@ -2102,11 +2099,7 @@ mod tests {
         struct NullDiverter;
 
         impl SurplusDiverting for NullDiverter {
-            fn divert_surplus(
-                &self,
-                _surplus: f64,
-                _simtime: SimulationTimeIteration,
-            ) -> anyhow::Result<f64> {
+            fn divert_surplus(&self, _surplus: f64, _simtime: Timestep) -> anyhow::Result<f64> {
                 Ok(0.)
             }
         }
@@ -2807,7 +2800,7 @@ mod tests {
             fn divert_surplus(
                 &self,
                 _supply_surplus: f64,
-                _simulation_time_iteration: SimulationTimeIteration,
+                _timestep: Timestep,
             ) -> anyhow::Result<f64> {
                 Ok(10.)
             }
@@ -3458,7 +3451,7 @@ mod tests {
                 BatteryLocation::Inside,
                 false,
                 false,
-                simtime.iter().current_iteration().timestep,
+                simtime.iter().current_iteration().step,
                 Arc::new(external_conditions),
             )
         }

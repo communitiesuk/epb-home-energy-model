@@ -1,6 +1,6 @@
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use approx::relative_eq;
 use fsum::FSum;
@@ -44,7 +44,7 @@ impl PointOfUse {
     pub fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         let mut water_energy_demand = 0.;
 
@@ -52,9 +52,7 @@ impl PointOfUse {
             if relative_eq!(event.volume_hot, 0., max_relative = 1e-09, epsilon = 1e-10) {
                 continue;
             }
-            let list_temp_volume = self
-                .cold_feed
-                .draw_off_water(event.volume_hot, *simulation_time_iteration)?;
+            let list_temp_volume = self.cold_feed.draw_off_water(event.volume_hot, timestep)?;
             let sum_t_by_v = FSum::with_all(list_temp_volume.iter().map(|(t, v)| t * v)).value();
             let sum_v = FSum::with_all(list_temp_volume.iter().map(|(_, v)| v)).value();
 
@@ -64,20 +62,16 @@ impl PointOfUse {
                 water_demand_to_kwh(event.volume_hot, self.temp_hot_water, temp_cold_water);
         }
         // Assumption is that system specified has sufficient capacity to meet any realistic demand
-        Ok(self.demand_energy(water_energy_demand, simulation_time_iteration))
+        Ok(self.demand_energy(water_energy_demand, timestep))
     }
 
     /// Demand energy (in kWh) from the heater
-    pub fn demand_energy(
-        &self,
-        energy_demand: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
+    pub fn demand_energy(&self, energy_demand: f64, timestep: Timestep) -> f64 {
         // Energy that heater is able to supply is limited by power rating
         let fuel_demand = energy_demand * (1. / self.efficiency);
 
         self.energy_supply_connection
-            .demand_energy(fuel_demand, simulation_time_iteration.index)
+            .demand_energy(fuel_demand, timestep.index)
             .unwrap();
 
         fuel_demand
@@ -161,7 +155,7 @@ mod tests {
 
         assert_relative_eq!(
             point_of_use
-                .demand_hot_water(usage_events, &simulation_time_iterator.current_iteration())
+                .demand_hot_water(usage_events, simulation_time_iterator.current_iteration())
                 .unwrap(),
             2.7893333333333334
         );
@@ -171,7 +165,7 @@ mod tests {
 
         assert_relative_eq!(
             point_of_use
-                .demand_hot_water(usage_events, &simulation_time_iterator.current_iteration())
+                .demand_hot_water(usage_events, simulation_time_iterator.current_iteration())
                 .unwrap(),
             0.
         );
@@ -184,8 +178,7 @@ mod tests {
     ) {
         let energy_demand = 2.0;
         assert_relative_eq!(
-            point_of_use
-                .demand_energy(energy_demand, &simulation_time_iterator.current_iteration()),
+            point_of_use.demand_energy(energy_demand, simulation_time_iterator.current_iteration()),
             2.0
         )
     }

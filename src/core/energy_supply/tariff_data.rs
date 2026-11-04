@@ -1,7 +1,7 @@
 use crate::core::schedule::{
     expand_numeric_schedule, reject_nulls, validate_schedule_length, NumericSchedule,
 };
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep};
 use anyhow::anyhow;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -103,11 +103,7 @@ impl TariffData {
         merged_prices
     }
 
-    pub(super) fn price(
-        &self,
-        tariff: &str,
-        simulation_time: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub(super) fn price(&self, tariff: &str, simulation_time: Timestep) -> anyhow::Result<f64> {
         let prices = self
             .electricity_prices
             .get(tariff)

@@ -20,7 +20,7 @@ use crate::core::heating_systems::heat_pump::{
     HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceWater, HeatPumpWarmAir,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::output::OutputEmitters;
 use anyhow::{anyhow, bail, Error};
 use arcstr::ArcStr;
@@ -73,7 +73,7 @@ impl HeatSourceWet {
         temp_flow: f64,
         temp_return: f64,
         ignore_standard_ctrl: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             HeatSourceWet::WaterCombi(combi) => Ok(combi.energy_output_max()),
@@ -103,7 +103,7 @@ impl HeatSourceWet {
                     Default::default(),
                     Default::default(),
                     ignore_standard_ctrl,
-                    &simtime,
+                    simtime,
                 ))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
@@ -126,7 +126,7 @@ impl HeatSourceWet {
         temp_flow: Option<f64>,
         temperature: Option<f64>,
         ignore_standard_ctrl: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             HeatSourceWet::WaterCombi(_combi) => {
@@ -165,7 +165,7 @@ impl HeatSourceWet {
                 Default::default(),
                 temperature,
                 ignore_standard_ctrl,
-                &simtime,
+                simtime,
             ),
             HeatSourceWet::HeatBatteryHotWater(battery) => battery.demand_energy(
                 energy_demand,
@@ -192,15 +192,12 @@ impl HeatSourceWet {
         }
     }
 
-    pub(crate) fn setpnt(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+    pub(crate) fn setpnt(&self, simtime: Timestep) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         Ok(match self {
             HeatSourceWet::WaterCombi(_) => {
                 bail!("BoilerServiceWaterCombi does not implement setpnt")
             }
-            HeatSourceWet::WaterRegular(regular) => regular.setpnt(&simtime),
+            HeatSourceWet::WaterRegular(regular) => regular.setpnt(simtime),
             HeatSourceWet::Space(space) => {
                 // NOTE - this is temp_setpnt in Python, rather than setpnt
                 // investigation needed to see if this is an issue
@@ -209,7 +206,7 @@ impl HeatSourceWet {
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.setpnt(simtime),
             HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime),
-            HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(&simtime)?,
+            HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(simtime)?,
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
                 heat_pump_water_only.setpnt(simtime)?
             }
@@ -224,7 +221,7 @@ pub(crate) enum HeatBatteryWaterService {
 }
 
 impl HeatBatteryWaterService {
-    fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+    fn setpnt(&self, simtime: Timestep) -> (Option<f64>, Option<f64>) {
         match self {
             HeatBatteryWaterService::Pcm(service) => service.setpnt(simtime),
             HeatBatteryWaterService::DryCore(service) => service.setpnt(simtime),
@@ -238,7 +235,7 @@ impl HeatBatteryWaterService {
         temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
         ignore_standard_ctrl: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             HeatBatteryWaterService::Pcm(service) => service.demand_energy(
@@ -264,7 +261,7 @@ impl HeatBatteryWaterService {
         &self,
         temp_flow: f64,
         temp_return: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             HeatBatteryWaterService::Pcm(service) => {
@@ -287,21 +284,19 @@ pub(crate) enum SpaceHeatSystem {
 }
 
 impl SpaceHeatSystem {
-    pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
+    pub fn temp_setpnt(&self, timestep: Timestep) -> Option<f64> {
         match self {
-            SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.temp_setpnt(&simulation_time_iteration)
-            }
-            SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
-            SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
+            SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.temp_setpnt(timestep),
+            SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(timestep),
+            SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(timestep),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
-                wet_distribution.temp_setpnt(&simulation_time_iteration)
+                wet_distribution.temp_setpnt(timestep)
             }
-            SpaceHeatSystem::Ufh(ufh) => ufh.temp_setpnt(&simulation_time_iteration),
+            SpaceHeatSystem::Ufh(ufh) => ufh.temp_setpnt(timestep),
         }
     }
 
-    pub fn frac_convective(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub fn frac_convective(&self, simtime: Timestep) -> f64 {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.frac_convective(),
             SpaceHeatSystem::Instant(instant) => instant.frac_convective(),
@@ -313,50 +308,31 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub fn demand_energy(
-        &mut self,
-        energy_demand: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub fn demand_energy(&mut self, energy_demand: f64, timestep: Timestep) -> anyhow::Result<f64> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.demand_energy(energy_demand, &simulation_time_iteration)
+                elec_storage.demand_energy(energy_demand, timestep)
             }
             SpaceHeatSystem::Instant(ref mut instant) => {
-                instant.demand_energy(energy_demand, simulation_time_iteration)
+                instant.demand_energy(energy_demand, timestep)
             }
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
-                warm_air.demand_energy(energy_demand, simulation_time_iteration)
+                warm_air.demand_energy(energy_demand, timestep)
             }
-            SpaceHeatSystem::WetDistribution(ref wet_distribution) => Emitters::demand_energy(
-                wet_distribution.clone(),
-                energy_demand,
-                simulation_time_iteration,
-            ),
-            SpaceHeatSystem::Ufh(ufh) => {
-                ufh.demand_energy(energy_demand, simulation_time_iteration)
+            SpaceHeatSystem::WetDistribution(ref wet_distribution) => {
+                Emitters::demand_energy(wet_distribution.clone(), energy_demand, timestep)
             }
+            SpaceHeatSystem::Ufh(ufh) => ufh.demand_energy(energy_demand, timestep),
         }
     }
 
-    pub fn in_required_period(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> Option<bool> {
+    pub fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
         match self {
-            SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.in_required_period(&simulation_time_iteration)
-            }
-            SpaceHeatSystem::Instant(instant) => {
-                instant.in_required_period(&simulation_time_iteration)
-            }
-            SpaceHeatSystem::WarmAir(warm_air) => {
-                warm_air.in_required_period(&simulation_time_iteration)
-            }
-            SpaceHeatSystem::WetDistribution(emitters) => {
-                emitters.in_required_period(&simulation_time_iteration)
-            }
-            SpaceHeatSystem::Ufh(ufh) => ufh.in_required_period(&simulation_time_iteration),
+            SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.in_required_period(timestep),
+            SpaceHeatSystem::Instant(instant) => instant.in_required_period(timestep),
+            SpaceHeatSystem::WarmAir(warm_air) => warm_air.in_required_period(timestep),
+            SpaceHeatSystem::WetDistribution(emitters) => emitters.in_required_period(timestep),
+            SpaceHeatSystem::Ufh(ufh) => ufh.in_required_period(timestep),
         }
     }
 
@@ -376,18 +352,13 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub fn energy_output_min(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub fn energy_output_min(&self, timestep: Timestep) -> anyhow::Result<f64> {
         match self {
-            SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.energy_output_min(&simulation_time_iteration)
-            }
+            SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.energy_output_min(timestep),
             SpaceHeatSystem::Instant(instant) => instant.energy_output_min(),
             SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
-                wet_distribution.energy_output_min(simulation_time_iteration)
+                wet_distribution.energy_output_min(timestep)
             }
             SpaceHeatSystem::Ufh(ufh) => ufh.energy_output_min(),
         }
@@ -411,7 +382,7 @@ impl SpaceHeatingService {
         temp_return_feed: f64,
         time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
@@ -437,7 +408,7 @@ impl SpaceHeatingService {
                     temp_output,
                     temp_return_feed,
                     time_start,
-                    &simtime,
+                    simtime,
                 ),
                 None,
             )),
@@ -470,7 +441,7 @@ impl SpaceHeatingService {
         time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
         update_heat_source_state: Option<bool>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> Result<(f64, Option<f64>), Error> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => Ok((
@@ -481,7 +452,7 @@ impl SpaceHeatingService {
                     time_start,
                     emitters_data_for_buffer_tank,
                     update_heat_source_state,
-                    simulation_time_iteration,
+                    timestep,
                 )?,
                 None,
             )),
@@ -494,7 +465,7 @@ impl SpaceHeatingService {
                     None,
                     None,
                     update_heat_source_state,
-                    simulation_time_iteration,
+                    timestep,
                 ),
             SpaceHeatingService::HeatNetwork(ref mut heat_network_service_space) => Ok((
                 heat_network_service_space.demand_energy(
@@ -503,7 +474,7 @@ impl SpaceHeatingService {
                     temp_return,
                     time_start,
                     update_heat_source_state,
-                    &simulation_time_iteration,
+                    timestep,
                 )?,
                 None,
             )),
@@ -514,7 +485,7 @@ impl SpaceHeatingService {
                     temp_return,
                     time_start,
                     update_heat_source_state,
-                    simulation_time_iteration,
+                    timestep,
                 )
             }
             #[cfg(test)]
@@ -528,7 +499,7 @@ impl SpaceHeatingService {
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
@@ -538,7 +509,7 @@ impl SpaceHeatingService {
                     temp_flow,
                     temp_return,
                     None,
-                    simulation_time_iteration,
+                    timestep,
                 ),
             _ => unreachable!(),
         }
@@ -557,7 +528,7 @@ impl HeatBatteryServiceSpace {
         temp_output: f64,
         temp_return_feed: f64,
         time_start: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
         Ok(match self {
             Self::Pcm(pcm) => (
@@ -578,7 +549,7 @@ impl HeatBatteryServiceSpace {
         temp_return: f64,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> Result<(f64, Option<f64>), Error> {
         Ok(match self {
             Self::Pcm(pcm) => (
@@ -606,14 +577,14 @@ impl HeatBatteryServiceSpace {
         })
     }
 
-    pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn temp_setpnt(&self, simtime: Timestep) -> Option<f64> {
         match self {
             HeatBatteryServiceSpace::Pcm(pcm) => pcm.temp_setpnt(simtime),
             HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.temp_setpnt(simtime),
         }
     }
 
-    pub(crate) fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, simtime: Timestep) -> Option<bool> {
         match self {
             HeatBatteryServiceSpace::Pcm(pcm) => pcm.in_required_period(simtime),
             HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.in_required_period(simtime),

@@ -1,4 +1,4 @@
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use anyhow::anyhow;
 
 /// This module provides objects to represent the source(s) of cold water.
@@ -28,7 +28,7 @@ impl ColdWaterSource {
     pub fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let time_series_idx = simtime.time_series_idx(self.start_day, self.time_series_step);
         let temperature = *self.cold_water_temps.get(time_series_idx).ok_or_else(|| {
@@ -44,7 +44,7 @@ impl ColdWaterSource {
     pub fn draw_off_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         self.get_temp_cold_water(volume_needed, simtime)
     }

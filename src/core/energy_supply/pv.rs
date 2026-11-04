@@ -3,7 +3,7 @@ use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::space_heat_demand::building_element::projected_height;
 use crate::core::units::{Orientation360, WATTS_PER_KILOWATT};
 use crate::input::{InverterType, PhotovoltaicVentilationStrategy};
@@ -107,7 +107,7 @@ impl PhotovoltaicPanel {
     fn shading_factors_direct(
         &self,
         external_conditions: &Arc<ExternalConditions>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         Ok(external_conditions
             .shading_reduction_factor_direct_diffuse(
@@ -117,7 +117,7 @@ impl PhotovoltaicPanel {
                 self.pitch,
                 self.orientation,
                 &self.shading,
-                simulation_time_iteration,
+                timestep,
             )?
             .0)
     }
@@ -126,7 +126,7 @@ impl PhotovoltaicPanel {
     fn shading_factors_diffuse(
         &self,
         external_conditions: &Arc<ExternalConditions>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         Ok(external_conditions
             .shading_reduction_factor_direct_diffuse(
@@ -136,7 +136,7 @@ impl PhotovoltaicPanel {
                 self.pitch,
                 self.orientation,
                 &self.shading,
-                simulation_time_iteration,
+                timestep,
             )?
             .1)
     }
@@ -148,7 +148,7 @@ impl PhotovoltaicPanel {
         &self,
         photovoltaic_system: PhotovoltaicSystem,
         external_conditions: &Arc<ExternalConditions>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         f_sh_dir: f64,
     ) -> anyhow::Result<f64> {
         // solar irradiance in W/m2
@@ -157,12 +157,11 @@ impl PhotovoltaicPanel {
                 self.pitch,
                 self.orientation,
                 false,
-                &simulation_time_iteration,
+                timestep,
             );
 
         // diffuse shading factor
-        let f_sh_dif =
-            self.shading_factors_diffuse(external_conditions, simulation_time_iteration)?;
+        let f_sh_dif = self.shading_factors_diffuse(external_conditions, timestep)?;
 
         // Calculate the impact of direct shading on the panel/inverters ability to output energy,
         // i.e. where the shadow of an obstacle falls on the PV panel.
@@ -175,8 +174,7 @@ impl PhotovoltaicPanel {
         };
 
         // solar irradiation in kWh/m2
-        let solar_irradiation = (i_sol_dir * f_sh_dir + i_sol_dif * f_sh_dif)
-            * simulation_time_iteration.timestep
+        let solar_irradiation = (i_sol_dir * f_sh_dir + i_sol_dif * f_sh_dif) * timestep.step
             / WATTS_PER_KILOWATT as f64;
 
         // reference solar irradiance kW/m2
@@ -306,25 +304,18 @@ impl OnSiteGeneration for PhotovoltaicSystem {
     /// Produce electrical energy (in kWh) from the PV system
     /// according to BS EN 15316-4-3:2017
     #[allow(unused_assignments)] // Python overwrites weighted_f_sh_dir without using it (reported to DESNZ 2025-11-21) - remove this attribute when corrected in future bug fix
-    fn produce_energy(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    fn produce_energy(&self, timestep: Timestep) -> anyhow::Result<(f64, f64)> {
         // Calculate a weighted f_sh_dir from the weighted average of the
         // direct shading factor and unshaded output of each panel
         let mut total_unshaded_energy_produced = 0.;
         let mut weighted_f_sh_dir = 0.;
 
         for panel in &self.panels {
-            let energy_produced = panel.produce_energy(
-                self.clone(),
-                &self.external_conditions,
-                simulation_time_iteration,
-                1.0,
-            )?;
+            let energy_produced =
+                panel.produce_energy(self.clone(), &self.external_conditions, timestep, 1.0)?;
             total_unshaded_energy_produced += energy_produced;
             weighted_f_sh_dir += panel
-                .shading_factors_direct(&self.external_conditions, simulation_time_iteration)?
+                .shading_factors_direct(&self.external_conditions, timestep)?
                 * energy_produced;
         }
 
@@ -347,7 +338,7 @@ impl OnSiteGeneration for PhotovoltaicSystem {
             let energy_produced = panel.produce_energy(
                 self.clone(),
                 &self.external_conditions,
-                simulation_time_iteration,
+                timestep,
                 weighted_f_sh_dir,
             )?;
             total_energy_produced += energy_produced;
@@ -355,11 +346,11 @@ impl OnSiteGeneration for PhotovoltaicSystem {
 
         // Add energy produced to the applicable energy supply connection via inverter (this will reduce demand)
         // calculate total power going to inverter
-        let power_input_inverter = total_energy_produced / simulation_time_iteration.timestep;
+        let power_input_inverter = total_energy_produced / timestep.step;
         // Inverter will calculate the efficiency and apply ac/dc limits and return energy delivered to the supply connection
         let total_energy_delivered = self
             .inverter
-            .produce_energy(power_input_inverter, simulation_time_iteration.index)?;
+            .produce_energy(power_input_inverter, timestep.index)?;
         let total_energy_lost = total_energy_produced - total_energy_delivered;
 
         Ok((total_energy_delivered, total_energy_lost))
@@ -814,11 +805,8 @@ mod tests {
             vec![],
         );
         let pv_system = PhotovoltaicSystem::new(external_conditions, vec![panel], pv_inverter);
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
-        assert_eq!(
-            pv_system.produce_energy(simulation_time_iteration).unwrap(),
-            (0., 0.)
-        );
+        let timestep = simulation_time.iter().next().unwrap();
+        assert_eq!(pv_system.produce_energy(timestep).unwrap(), (0., 0.));
     }
 
     /// Test that PhotovoltaicSystem with multiple panels uses weighted average shading factor

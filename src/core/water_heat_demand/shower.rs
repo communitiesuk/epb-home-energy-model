@@ -1,7 +1,7 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::wwhrs::{WwhrsConfiguration, WwhrsInstantaneous};
 use crate::core::material_properties::WATER;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
@@ -30,7 +30,7 @@ impl Shower {
         &'a self,
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             Shower::MixerShower(s) => s.hot_water_demand(event, func_temp_hot_water, simtime),
@@ -91,7 +91,7 @@ impl MixerShower {
         &'a self,
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let total_shower_duration = event
             .duration
@@ -222,7 +222,7 @@ impl InstantElectricShower {
     pub(crate) fn hot_water_demand(
         &self,
         event: WaterHeatingEvent,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let total_shower_duration = event
             .duration

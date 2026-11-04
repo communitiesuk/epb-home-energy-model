@@ -1,4 +1,4 @@
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
@@ -29,7 +29,7 @@ impl OtherHotWater {
         &self,
         event: &WaterHeatingEvent,
         func_temp_hot_water: T,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let total_demand_duration = event.duration.ok_or(anyhow!(
             "Expected an event duration for Other Hot Water event"

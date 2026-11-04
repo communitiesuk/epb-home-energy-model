@@ -2,8 +2,8 @@ use crate::core::controls::time_control::{ControlSetPoint, OnOffControl, Setpoin
 use crate::core::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
-use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::simulation_time::SimulationTimeIterator;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
     JOULES_PER_KILOJOULE,
@@ -233,7 +233,7 @@ impl BuildingElement {
         self.as_heat_transfer_through().k_pli()
     }
 
-    pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    pub(crate) fn solar_gains(&self, simtime: Timestep) -> anyhow::Result<f64> {
         match self {
             BuildingElement::Opaque(el) => Ok(el.solar_gains()),
             BuildingElement::AdjacentConditionedSpace(el) => Ok(el.solar_gains()),
@@ -302,22 +302,19 @@ impl BuildingElement {
     pub(crate) fn h_pli_by_index_unchecked(
         &self,
         idx: usize,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             BuildingElement::Opaque(el) => Ok(el.h_pli()[idx]),
             BuildingElement::AdjacentConditionedSpace(el) => Ok(el.h_pli()[idx]),
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.h_pli()[idx]),
             BuildingElement::Ground(el) => Ok(el.h_pli()[idx]),
-            BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration),
+            BuildingElement::Transparent(el) => el.h_pli_by_index(idx, timestep),
             BuildingElement::PartyWall(el) => Ok(el.h_pli()[idx]),
         }
     }
 
-    pub(crate) fn i_sol_dir_dif(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    pub(crate) fn i_sol_dir_dif(&self, simtime: Timestep) -> anyhow::Result<(f64, f64)> {
         Ok(match self {
             BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime)?,
             BuildingElement::AdjacentConditionedSpace(el) => el.i_sol_dir_dif(simtime),
@@ -330,7 +327,7 @@ impl BuildingElement {
 
     pub(crate) fn shading_factors_direct_diffuse(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         match self {
             BuildingElement::Opaque(el) => el.shading_factors_direct_diffuse(simtime),
@@ -346,7 +343,7 @@ impl BuildingElement {
         }
     }
 
-    pub(crate) fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn temp_ext(&self, simtime: Timestep) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.temp_ext(simtime),
             BuildingElement::AdjacentConditionedSpace(el) => el.temp_ext(simtime),
@@ -681,8 +678,8 @@ pub(crate) trait HeatTransferOtherSide {
         H_RE
     }
 
-    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
-        self.external_conditions().air_temp(&simtime)
+    fn temp_ext(&self, simtime: Timestep) -> f64 {
+        self.external_conditions().air_temp(simtime)
     }
 
     fn external_conditions(&self) -> &ExternalConditions;
@@ -834,7 +831,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                                       shield_fact_location: WindShieldLocation,
                                       area_per_perimeter_vent,
                                       smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
-                                      simtime: &SimulationTimeIteration|
+                                      timestep: Timestep|
              -> anyhow::Result<f64> {
                 // Characteristic dimension of floor
                 let char_dimen = charac_dimen_floor();
@@ -855,7 +852,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 // is adjusted separately in ventilation.rs
                 // (calculate_smart_air_brick_infiltration_adjustment).
                 let u_x_ventilation = smart_air_brick_control
-                    .and_then(|control| control.setpnt(simtime))
+                    .and_then(|control| control.setpnt(timestep))
                     .map_or(u_x_ventilation, |opening_ratio| {
                         u_x_ventilation * opening_ratio
                     });
@@ -887,7 +884,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                     shield_fact_location,
                     area_vent,
                     smart_air_brick_control,
-                    &simtime.current_iteration(),
+                    simtime.current_iteration(),
                 )?;
 
                 // equivalent thickness, in m
@@ -1097,7 +1094,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
     }
 
     /// Return the temperature on the other side of the building element
-    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+    fn temp_ext(&self, simtime: Timestep) -> f64 {
         let temp_ext_annual = self.external_conditions().air_temp_annual().expect("The external conditions provided do not contain data for an entire year, therefore an annual temperature cannot be calculated.");
         let temp_ext_month = self
             .external_conditions()
@@ -1228,7 +1225,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn set_solar_absorption_coeff(&mut self, solar_absorption_coeff: f64);
     fn solar_absorption_coeff(&self) -> f64;
 
-    fn i_sol_dir_dif(&self, _simtime: SimulationTimeIteration) -> (f64, f64) {
+    fn i_sol_dir_dif(&self, _simtime: Timestep) -> (f64, f64) {
         // Return default of zero for i_sol_dir and i_sol_dif
         (0.0, 0.0)
     }
@@ -1238,7 +1235,7 @@ pub(crate) trait SolarRadiationInteraction {
         0.
     }
 
-    fn shading_factors_direct_diffuse(&self, _simtime: SimulationTimeIteration) -> (f64, f64) {
+    fn shading_factors_direct_diffuse(&self, _simtime: Timestep) -> (f64, f64) {
         // Return default of one for shading factor (no shading)
         (1.0, 1.0)
     }
@@ -1269,7 +1266,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn external_conditions(&self) -> &ExternalConditions;
 
     /// Return calculated i_sol_dir and i_sol_dif using pitch and orientation of element
-    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> anyhow::Result<(f64, f64)> {
+    fn i_sol_dir_dif(&self, simtime: Timestep) -> anyhow::Result<(f64, f64)> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions()
             .calculated_direct_diffuse_total_irradiance(
@@ -1280,15 +1277,12 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
                     )
                 })?,
                 false,
-                &simtime,
+                simtime,
             );
         Ok((i_sol_dir, i_sol_dif))
     }
 
-    fn shading_factors_direct_diffuse(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    fn shading_factors_direct_diffuse(&self, simtime: Timestep) -> anyhow::Result<(f64, f64)> {
         self.external_conditions()
             .shading_reduction_factor_direct_diffuse(
                 self.base_height(),
@@ -1331,7 +1325,7 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
     }
 
     /// Return calculated solar gains using pitch and orientation of element
-    fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    fn solar_gains(&self, simtime: Timestep) -> anyhow::Result<f64> {
         let g_value = self.convert_g_value();
         let surf_irrad = self.external_conditions().surface_irradiance(
             self.base_height(),
@@ -1353,10 +1347,7 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
     fn area(&self) -> f64;
     fn frame_area_fraction(&self) -> f64;
 
-    fn shading_factors_direct_diffuse(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    fn shading_factors_direct_diffuse(&self, simtime: Timestep) -> anyhow::Result<(f64, f64)> {
         self.external_conditions()
             .shading_reduction_factor_direct_diffuse(
                 self.base_height(),
@@ -1478,16 +1469,13 @@ impl BuildingElementOpaque {
         self.solar_absorption_coeff
     }
 
-    pub(crate) fn i_sol_dir_dif(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    pub(crate) fn i_sol_dir_dif(&self, simtime: Timestep) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::i_sol_dir_dif(self, simtime)
     }
 
     pub(crate) fn shading_factors_direct_diffuse(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::shading_factors_direct_diffuse(self, simtime)
     }
@@ -2674,7 +2662,7 @@ impl BuildingElementGround {
         HeatTransferInternal::r_si(self)
     }
 
-    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+    fn temp_ext(&self, simtime: Timestep) -> f64 {
         HeatTransferOtherSideGround::temp_ext(self, simtime)
     }
 }
@@ -3069,7 +3057,7 @@ impl BuildingElementTransparent {
         new_trans
     }
 
-    fn adjust_treatment(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    fn adjust_treatment(&self, simtime: Timestep) -> anyhow::Result<()> {
         fn open_treatment(treatment: &WindowTreatment, current_time: f64) {
             if !treatment.is_open.load(Ordering::SeqCst) {
                 treatment.is_open.store(true, Ordering::SeqCst);
@@ -3110,15 +3098,15 @@ impl BuildingElementTransparent {
                 let ctrl_open: Option<bool> = treatment
                     .open_control
                     .as_ref()
-                    .map(|ctrl| ctrl.is_on(&simtime));
+                    .map(|ctrl| ctrl.is_on(simtime));
                 let closing_irrad_threshold: Option<f64> = treatment
                     .closing_irradiance_control
                     .as_ref()
-                    .and_then(|ctrl| ctrl.setpnt(&simtime));
+                    .and_then(|ctrl| ctrl.setpnt(simtime));
                 let opening_irrad_threshold: Option<f64> = treatment
                     .opening_irradiance_control
                     .as_ref()
-                    .and_then(|ctrl| ctrl.setpnt(&simtime));
+                    .and_then(|ctrl| ctrl.setpnt(simtime));
 
                 match ctrl_open {
                     Some(true) => open_treatment(treatment, time_current),
@@ -3150,7 +3138,7 @@ impl BuildingElementTransparent {
         Ok(())
     }
 
-    pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    pub(crate) fn solar_gains(&self, simtime: Timestep) -> anyhow::Result<f64> {
         let mut solar_gains = SolarRadiationInteractionTransmitted::solar_gains(self, simtime)?;
 
         if let Some(treatments) = &self.treatment {
@@ -3175,11 +3163,7 @@ impl BuildingElementTransparent {
         self.area * u_value
     }
 
-    pub(crate) fn h_pli_by_index(
-        &self,
-        idx: usize,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub(crate) fn h_pli_by_index(&self, idx: usize, simtime: Timestep) -> anyhow::Result<f64> {
         // Account for resistance of window treatment in heat transfer coefficient
         // TODO (from Python) Check that idx refers to inside surface?
         let mut thermal_resistance_construction = 1.0
@@ -3212,7 +3196,7 @@ impl BuildingElementTransparent {
 
     pub(crate) fn shading_factors_direct_diffuse(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionTransmitted::shading_factors_direct_diffuse(self, simtime)
     }

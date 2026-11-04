@@ -121,11 +121,11 @@ impl SimulationTimeIterator {
         self.simulation_time.step
     }
 
-    pub fn current_iteration(&self) -> SimulationTimeIteration {
-        SimulationTimeIteration {
+    pub fn current_iteration(&self) -> Timestep {
+        Timestep {
             index: self.current_index,
             time: self.current_time,
-            timestep: self.simulation_time.step,
+            step: self.simulation_time.step,
         }
     }
 }
@@ -148,13 +148,13 @@ impl ExactSizeIterator for SimulationTimeIterator {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct SimulationTimeIteration {
+pub struct Timestep {
     pub index: usize,
     pub time: f64,
-    pub timestep: f64,
+    pub step: f64,
 }
 
-impl SimulationTimeIteration {
+impl Timestep {
     pub fn current_hour(&self) -> u32 {
         self.time.floor() as u32
     }
@@ -211,25 +211,25 @@ impl SimulationTimeIteration {
 }
 
 impl Iterator for SimulationTimeIterator {
-    type Item = SimulationTimeIteration;
+    type Item = Timestep;
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.started && self.simulation_time.start_time != self.simulation_time.end_time {
             self.started = true;
-            return Some(SimulationTimeIteration {
+            return Some(Timestep {
                 index: 0,
                 time: self.simulation_time.start_time,
-                timestep: self.simulation_time.step,
+                step: self.simulation_time.step,
             });
         }
         match self.current_time < (self.simulation_time.end_time - self.simulation_time.step) {
             true => {
                 self.current_index += 1;
                 self.current_time += self.simulation_time.step;
-                Some(SimulationTimeIteration {
+                Some(Timestep {
                     index: self.current_index,
                     time: self.current_time,
-                    timestep: self.simulation_time.step,
+                    step: self.simulation_time.step,
                 })
             }
             false => None,
@@ -328,7 +328,7 @@ mod tests {
                 item.index, item.time
             );
             assert_eq!(item.time, i as f64 * timestep + 742.0);
-            assert_eq!(item.timestep, timestep);
+            assert_eq!(item.step, timestep);
             assert_eq!(item.current_hour(), hours[i]);
             assert_eq!(item.hour_of_day(), hours_of_day[i]);
             assert_eq!(item.current_day(), current_days[i]);

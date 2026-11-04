@@ -1,6 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::external_conditions::ExternalConditions;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::input::BatteryLocation;
 use crate::input::ElectricBattery as ElectricBatteryInput;
 use approx::relative_eq;
@@ -159,7 +159,7 @@ impl ElectricBattery {
         -0.04 * battery_age + 1.
     }
 
-    pub(crate) fn get_charge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn get_charge_efficiency(&self, simtime: Timestep) -> f64 {
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
 
         self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
@@ -169,7 +169,7 @@ impl ElectricBattery {
     /// The fraction of internal energy that becomes useful terminal output.
     /// Mirrors get_charge_efficiency: worse SOH or cold temperature reduces
     /// this value (less energy delivered per kWh of internal depletion).
-    pub(crate) fn get_discharge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn get_discharge_efficiency(&self, simtime: Timestep) -> f64 {
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
 
         self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
@@ -205,7 +205,7 @@ impl ElectricBattery {
         &self,
         energy_flow: f64,
         charging_from_grid: bool,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> f64 {
         let timestep = self.simulation_timestep;
         let total_time_charging_current_timestep = self
@@ -337,9 +337,9 @@ impl ElectricBattery {
         }
     }
 
-    fn limit_capacity_due_to_temp(&self, simtime: SimulationTimeIteration) -> f64 {
+    fn limit_capacity_due_to_temp(&self, simtime: Timestep) -> f64 {
         let air_temp = match self.battery_location {
-            BatteryLocation::Outside => self.external_conditions.air_temp(&simtime),
+            BatteryLocation::Outside => self.external_conditions.air_temp(simtime),
             BatteryLocation::Inside => 20., // Fixed for now, but if we add zone location of battery (if inside) as an input, we could look this up in future.
         };
 

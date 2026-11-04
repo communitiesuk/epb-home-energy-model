@@ -6,7 +6,7 @@ use crate::core::controls::time_control::{Control, OnOffTimeControl, SetpointTim
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
     celsius_to_kelvin, Orientation360, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE,
@@ -625,11 +625,11 @@ impl Window {
     }
 
     /// Return R_w_arg with the unit's open/shut control applied: a missing
-    fn r_w_arg_effective(&self, r_w_arg: f64, simtime: SimulationTimeIteration) -> f64 {
+    fn r_w_arg_effective(&self, r_w_arg: f64, simtime: Timestep) -> f64 {
         match &self.on_off_ctrl_obj {
             None => 0.,
             Some(control) => {
-                if !control.is_on(&simtime) {
+                if !control.is_on(simtime) {
                     0.
                 } else {
                     r_w_arg
@@ -658,7 +658,7 @@ impl Window {
         f_cross: bool,
         shield_class: VentilationShieldClass,
         r_w_arg: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         let r = self.r_w_arg_effective(r_w_arg.unwrap_or(0.), simtime);
         let mut qv_in_through_window_opening = 0.0;
@@ -1538,12 +1538,12 @@ impl MechanicalVentilation {
     }
 
     /// Returns the fraction of the timestep for which the ventilation is running
-    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> anyhow::Result<f64> {
+    fn f_op_v(&self, timestep: Timestep) -> anyhow::Result<f64> {
         if self.vent_type().is_intermittent() {
             let f_op_v = self
                 .ctrl_intermittent_mev
                 .as_ref()
-                .and_then(|ctrl| ctrl.setpnt(simulation_time));
+                .and_then(|ctrl| ctrl.setpnt(timestep));
             match f_op_v {
                 Some(f_op_v) if (0. ..=1.).contains(&f_op_v) => Ok(f_op_v),
                 _ => bail!("Error f_op_v is not between 0 and 1"),
@@ -1568,7 +1568,7 @@ impl MechanicalVentilation {
         t_z: f64,
         t_e: f64,
         p_z_ref: f64,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64)> {
         // Required air flow at air terminal devices
         let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds()?;
@@ -1663,7 +1663,7 @@ impl MechanicalVentilation {
         // Amount of air flow depends on controls
         let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
             SupplyAirFlowRateControlType::Oda => {
-                let f_op_v = self.f_op_v(simulation_time)?;
+                let f_op_v = self.f_op_v(timestep)?;
                 let flow_change_coefficient = self.vent_type().flow_change_coefficients();
 
                 // Based on Equation 18 and 19
@@ -1723,7 +1723,7 @@ impl MechanicalVentilation {
         zone_volume: f64,
         total_volume: f64,
         throughput_factor: Option<f64>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         let _throughput_factor = throughput_factor.unwrap_or(1.0);
         // Calculate energy use by fans
@@ -1732,8 +1732,8 @@ impl MechanicalVentilation {
             * f64::from(LITRES_PER_CUBIC_METRE))
             * (zone_volume / total_volume);
         let fan_energy_use_kwh = (fan_power_w / f64::from(WATTS_PER_KILOWATT))
-            * simulation_time_iteration.timestep
-            * self.f_op_v(simulation_time_iteration)?;
+            * timestep.step
+            * self.f_op_v(timestep)?;
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type() {
             MechVentType::IntermittentMev
@@ -1749,14 +1749,11 @@ impl MechanicalVentilation {
             MechVentType::PositiveInputVentilation => (fan_energy_use_kwh, 0.0),
         };
         self.energy_supply_conn
-            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)?;
-        self.energy_supply_conn.demand_energy(
-            extract_fan_energy_use_in_kwh,
-            simulation_time_iteration.index,
-        )?;
+            .demand_energy(supply_fan_energy_use_kwh, timestep.index)?;
+        self.energy_supply_conn
+            .demand_energy(extract_fan_energy_use_in_kwh, timestep.index)?;
 
-        Ok(supply_fan_energy_use_kwh * f64::from(WATTS_PER_KILOWATT)
-            / simulation_time_iteration.timestep)
+        Ok(supply_fan_energy_use_kwh * f64::from(WATTS_PER_KILOWATT) / timestep.step)
     }
 
     /// Calculate the internal gains/losses from MVHR ductwork.
@@ -1985,7 +1982,7 @@ type CalcAirChangesFn = fn(
     Option<f64>,
     f64,
     Option<ReportingFlag>,
-    SimulationTimeIteration,
+    Timestep,
 ) -> anyhow::Result<f64>;
 
 /// Arguments:
@@ -2251,7 +2248,7 @@ impl InfiltrationVentilation {
         temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> Result<f64, InternalReferencePressureCalculationError> {
         let mut last_error: Option<Cow<'static, str>> = None;
 
@@ -2304,7 +2301,7 @@ impl InfiltrationVentilation {
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         flag: Option<ReportingFlag>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let (qm_in, qm_out, _) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
@@ -2333,7 +2330,7 @@ impl InfiltrationVentilation {
         r_w_arg_min_max: Option<f64>,
         reporting_flag: Option<ReportingFlag>,
         report_effective_flow_rate: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
         let (mut qm_in, _, qm_effective_flow_rate) = self
@@ -2377,16 +2374,13 @@ impl InfiltrationVentilation {
     ///     1.0 = no adjustment (baseline matching airtightness test)
     ///     < 1.0 = reduced infiltration (vents more closed than during test)
     ///     > 1.0 = increased infiltration (vents more open than during test)
-    fn calculate_lower_facade_infiltration_adjustment(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> f64 {
+    fn calculate_lower_facade_infiltration_adjustment(&self, simtime: Timestep) -> f64 {
         match (
             self.smart_air_brick_control.as_ref(),
             self.vents_open_during_airtightness_test,
         ) {
             (Some(smart_air_brick_control), Some(vents_open_during_airtightness_test)) => {
-                let Some(current_opening_ratio) = smart_air_brick_control.setpnt(&simtime) else {
+                let Some(current_opening_ratio) = smart_air_brick_control.setpnt(simtime) else {
                     return 1.0;
                 };
 
@@ -2439,7 +2433,7 @@ impl InfiltrationVentilation {
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         reporting_flag: Option<ReportingFlag>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
         let t_e = celsius_to_kelvin(temp_exterior_air)?;
@@ -2557,7 +2551,7 @@ impl InfiltrationVentilation {
                     t_z,
                     t_e,
                     p_z_ref,
-                    &simtime,
+                    simtime,
                 )?;
             qm_sup_to_vent_zone += qm_sup;
             qm_eta_from_vent_zone += qm_eta;
@@ -2633,7 +2627,7 @@ impl InfiltrationVentilation {
         initial_p_z_ref_guess: f64,
         reporting_flag: Option<ReportingFlag>,
         report_effective_flow_rate: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
         #[cfg(test)]
@@ -2710,7 +2704,7 @@ impl InfiltrationVentilation {
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
         reporting_flag: Option<ReportingFlag>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let ach = self.calc_air_changes_per_hour(
             wind_speed,
@@ -2763,7 +2757,7 @@ impl InfiltrationVentilation {
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
         reporting_flag: Option<ReportingFlag>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let initial_ach = self.calc_air_changes_per_hour(
             wind_speed,
@@ -3245,7 +3239,7 @@ struct FindRVArgProblem<'a> {
     r_w_arg: Option<f64>,
     initial_p_z_ref_guess: f64,
     reporting_flag: Option<ReportingFlag>,
-    simtime: SimulationTimeIteration,
+    simtime: Timestep,
 }
 
 impl CostFunction for FindRVArgProblem<'_> {
@@ -3276,7 +3270,7 @@ struct ImplicitMassBalanceProblem<'a> {
     temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
-    simtime: SimulationTimeIteration,
+    simtime: Timestep,
     infiltration_ventilation: &'a InfiltrationVentilation,
 }
 
@@ -3310,7 +3304,7 @@ fn root_scalar_for_implicit_mass_balance(
     temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
-    simtime: SimulationTimeIteration,
+    simtime: Timestep,
     bracket: (f64, f64),
 ) -> Result<f64, Cow<'static, str>> {
     let problem = ImplicitMassBalanceProblem {
@@ -5099,7 +5093,7 @@ mod tests {
                     293.15,
                     celsius_to_kelvin(air_temps[0]).unwrap(),
                     1.7775065710163496,
-                    &simulation_time_iterator.next().unwrap(),
+                    simulation_time_iterator.next().unwrap(),
                 )
                 .unwrap();
         assert_relative_eq!(qm_sup_dis_req, 0.);
@@ -5119,7 +5113,7 @@ mod tests {
     ) {
         assert_relative_eq!(
             mechanical_ventilation
-                .f_op_v(&simulation_time_iterator.current_iteration())
+                .f_op_v(simulation_time_iterator.current_iteration())
                 .unwrap(),
             1.
         );
@@ -5137,7 +5131,7 @@ mod tests {
         );
         assert_eq!(
             mechanical_ventilation
-                .f_op_v(&simulation_time_iterator.current_iteration())
+                .f_op_v(simulation_time_iterator.current_iteration())
                 .unwrap(),
             0.5
         );
@@ -5149,7 +5143,7 @@ mod tests {
                 .into(),
         );
         mechanical_ventilation
-            .f_op_v(&simulation_time_iterator.current_iteration())
+            .f_op_v(simulation_time_iterator.current_iteration())
             .unwrap();
     }
 
@@ -5159,7 +5153,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         ctrl_intermittent_mev: SetpointTimeControl,
     ) {
-        let simtime = &simulation_time_iterator.current_iteration();
+        let simtime = simulation_time_iterator.current_iteration();
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
@@ -5254,7 +5248,7 @@ mod tests {
         energy_supply: EnergySupply,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let simtime = &simulation_time_iterator.current_iteration();
+        let simtime = simulation_time_iterator.current_iteration();
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
@@ -5347,10 +5341,10 @@ mod tests {
                 293.15,
                 celsius_to_kelvin(10.).unwrap(),
                 -1.0,
-                &SimulationTimeIteration {
+                Timestep {
                     index: 0,
                     time: 0.0,
-                    timestep: 1.0,
+                    step: 1.0,
                 },
             )
             .unwrap();

@@ -2,7 +2,7 @@
 
 use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use parking_lot::Mutex;
 #[cfg(test)]
@@ -13,13 +13,13 @@ pub trait WaterSupplyBehaviour: Clone {
     fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>>;
 
     fn draw_off_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>>;
 
     fn ultimate_cold_water_source(&self) -> Self {
@@ -60,7 +60,7 @@ impl WaterSupplyBehaviour for WaterSupply {
     fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
             WaterSupply::ColdWaterSource(cold_water_source) => {
@@ -89,7 +89,7 @@ impl WaterSupplyBehaviour for WaterSupply {
     fn draw_off_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
             WaterSupply::ColdWaterSource(cold_water_source) => {
@@ -141,7 +141,7 @@ impl WaterSupplyBehaviour for MockWaterSupply {
     fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        _simtime: SimulationTimeIteration,
+        _simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         Ok(vec![(self.temperature, volume_needed)])
     }
@@ -149,7 +149,7 @@ impl WaterSupplyBehaviour for MockWaterSupply {
     fn draw_off_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         self.get_temp_cold_water(volume_needed, simtime)
     }
@@ -213,7 +213,7 @@ impl WaterSupplyBehaviour for VaryingTempWaterSupply {
     fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        _simtime: SimulationTimeIteration,
+        _simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         Ok(varying_temp_by_volume(volume_needed))
     }
@@ -221,7 +221,7 @@ impl WaterSupplyBehaviour for VaryingTempWaterSupply {
     fn draw_off_water(
         &self,
         volume_needed: f64,
-        _simtime: SimulationTimeIteration,
+        _simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         self.register_call_to_draw_off_water(volume_needed);
         Ok(varying_temp_by_volume(volume_needed))

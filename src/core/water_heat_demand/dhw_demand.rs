@@ -4,7 +4,7 @@ use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::TypedScheduleEvent;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -75,7 +75,7 @@ impl TappingPoint<'_> {
         &'a self,
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             TappingPoint::Shower(shower) => {
@@ -354,7 +354,7 @@ impl DomesticHotWaterDemand {
         hot_water_source: &HotWaterSource,
         volume_required_already: f64,
         volume_required: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let list_temperature_for_required_volume = hot_water_source.get_temp_hot_water(
             volume_required,
@@ -418,7 +418,7 @@ impl DomesticHotWaterDemand {
 
     pub fn hot_water_demand<'a>(
         &'a self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<HotWaterDemandResult> {
         let hot_water_source_keys: Vec<ArcStr> = self
             .hot_water_sources
@@ -670,7 +670,7 @@ impl DomesticHotWaterDemand {
 
     pub(crate) fn calc_water_heating(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         internal_air_temperature: f64,
         external_air_temperature: f64,
     ) -> anyhow::Result<WaterHeatingCalculation> {
@@ -717,7 +717,7 @@ impl DomesticHotWaterDemand {
             let gains_internal_dhw_for_hws = (pw_losses_internal_for_hws
                 + gains_internal_dhw_use_for_hws)
                 * (WATTS_PER_KILOWATT as f64)
-                / simtime.timestep;
+                / simtime.step;
             gains_internal_dhw.insert(hws_name, gains_internal_dhw_for_hws);
         }
 
@@ -1039,7 +1039,7 @@ pub mod tests {
         fn demand_hot_water(
             &self,
             usage_events: Vec<WaterEventResult>,
-            simtime: SimulationTimeIteration,
+            simtime: Timestep,
         ) -> anyhow::Result<f64> {
             match self {
                 HotWaterSourceMockKind::Simple(mock) => {
@@ -1058,7 +1058,7 @@ pub mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-            simtime: SimulationTimeIteration,
+            simtime: Timestep,
         ) -> anyhow::Result<Vec<(f64, f64)>> {
             match self {
                 HotWaterSourceMockKind::Simple(mock) => {
@@ -1121,7 +1121,7 @@ pub mod tests {
         fn demand_hot_water(
             &self,
             usage_events: Vec<WaterEventResult>,
-            _: SimulationTimeIteration,
+            _: Timestep,
         ) -> anyhow::Result<f64> {
             Ok(FSum::with_all(
                 usage_events
@@ -1135,7 +1135,7 @@ pub mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-            _simtime: SimulationTimeIteration,
+            _simtime: Timestep,
         ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
             let frac_volume_req_already = volume_required_already / volume_req_cumulative;
@@ -1172,7 +1172,7 @@ pub mod tests {
         fn demand_hot_water(
             &self,
             _usage_events: Vec<WaterEventResult>,
-            _simtime: SimulationTimeIteration,
+            _simtime: Timestep,
         ) -> anyhow::Result<f64> {
             Ok(0.) // Python doesn't mock this
         }
@@ -1181,7 +1181,7 @@ pub mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-            _simtime: SimulationTimeIteration,
+            _simtime: Timestep,
         ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
             Ok(vec![(55.0, volume_req_cumulative)])
@@ -1201,7 +1201,7 @@ pub mod tests {
         fn demand_hot_water(
             &self,
             usage_events: Vec<WaterEventResult>,
-            _: SimulationTimeIteration,
+            _: Timestep,
         ) -> anyhow::Result<f64> {
             Ok(FSum::with_all(
                 usage_events
@@ -1215,7 +1215,7 @@ pub mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-            _simtime: SimulationTimeIteration,
+            _simtime: Timestep,
         ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
             let frac_volume_req_already = volume_required_already / volume_req_cumulative;
@@ -3086,10 +3086,10 @@ pub mod tests {
 
         // Test timestep 13 with Other event
         let actual = dhw_demand
-            .hot_water_demand(SimulationTimeIteration {
+            .hot_water_demand(Timestep {
                 index: 13,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             })
             .unwrap();
         let HotWaterDemandResult {
@@ -3171,10 +3171,10 @@ pub mod tests {
 
         // Test timestep 14 with mixer shower at new temperature
         let actual = dhw_demand
-            .hot_water_demand(SimulationTimeIteration {
+            .hot_water_demand(Timestep {
                 index: 14,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             })
             .unwrap();
         let HotWaterDemandResult {
@@ -3268,10 +3268,10 @@ pub mod tests {
 
         // Test timestep 13 with multiple mixer showers at same temperature
         let actual = dhw_demand
-            .hot_water_demand(SimulationTimeIteration {
+            .hot_water_demand(Timestep {
                 index: 13,
                 time: 0.,
-                timestep: 1.,
+                step: 1.,
             })
             .unwrap();
         let HotWaterDemandResult {

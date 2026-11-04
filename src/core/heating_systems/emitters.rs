@@ -8,7 +8,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
     bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
@@ -535,46 +535,35 @@ impl Emitters {
         }
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+    pub fn temp_setpnt(&self, timestep: Timestep) -> Option<f64> {
         match self.heat_source.read().deref() {
-            SpaceHeatingService::HeatPump(heat_pump) => {
-                heat_pump.temp_setpnt(simulation_time_iteration)
-            }
-            SpaceHeatingService::Boiler(boiler) => boiler.temp_setpnt(*simulation_time_iteration),
+            SpaceHeatingService::HeatPump(heat_pump) => heat_pump.temp_setpnt(timestep),
+            SpaceHeatingService::Boiler(boiler) => boiler.temp_setpnt(timestep),
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                heat_network.temperature_setpnt(simulation_time_iteration)
+                heat_network.temperature_setpnt(timestep)
             }
-            SpaceHeatingService::HeatBattery(heat_battery) => {
-                heat_battery.temp_setpnt(*simulation_time_iteration)
-            }
+            SpaceHeatingService::HeatBattery(heat_battery) => heat_battery.temp_setpnt(timestep),
             #[cfg(test)]
             SpaceHeatingService::Mock => Some(20.),
         }
     }
 
-    pub(crate) fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
         match self.heat_source.read().deref() {
-            SpaceHeatingService::HeatPump(heat_pump) => {
-                heat_pump.in_required_period(simulation_time_iteration)
-            }
-            SpaceHeatingService::Boiler(boiler) => {
-                boiler.in_required_period(*simulation_time_iteration)
-            }
+            SpaceHeatingService::HeatPump(heat_pump) => heat_pump.in_required_period(timestep),
+            SpaceHeatingService::Boiler(boiler) => boiler.in_required_period(timestep),
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                heat_network.in_required_period(simulation_time_iteration)
+                heat_network.in_required_period(timestep)
             }
             SpaceHeatingService::HeatBattery(heat_battery) => {
-                heat_battery.in_required_period(*simulation_time_iteration)
+                heat_battery.in_required_period(timestep)
             }
             #[cfg(test)]
             SpaceHeatingService::Mock => Some(true),
         }
     }
 
-    pub(crate) fn frac_convective(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn frac_convective(&self, simtime: Timestep) -> f64 {
         if let Some(WetEmitter::Fancoil {
             frac_convective, ..
         }) = self.fancoil.as_ref().map(|f| f.as_ref())
@@ -599,11 +588,11 @@ impl Emitters {
     }
 
     /// Weighted average of emitter power output
-    fn power_output_emitter_weight(&self, simtime: SimulationTimeIteration) -> Vec<f64> {
+    fn power_output_emitter_weight(&self, simtime: Timestep) -> Vec<f64> {
         let t_rm = 20.; // assumed internal air temperature
 
         // flow and return temperatures
-        let (flow_temp, return_temp) = self.temp_flow_return(&simtime);
+        let (flow_temp, return_temp) = self.temp_flow_return(simtime);
         let t_e = (flow_temp + return_temp) / 2.;
 
         let power_total_weight = if t_e > t_rm {
@@ -646,10 +635,7 @@ impl Emitters {
         power_total_weight
     }
 
-    pub(crate) fn temp_flow_return(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> (f64, f64) {
+    pub(crate) fn temp_flow_return(&self, timestep: Timestep) -> (f64, f64) {
         let flow_temp = match self.ecodesign_controller_class {
             EcoDesignControllerClass::ClassII
             | EcoDesignControllerClass::ClassIII
@@ -664,7 +650,7 @@ impl Emitters {
                 // minimised flow temperatures are not always achieved.
 
                 // use weather temperature at the timestep
-                let outside_temp = self.external_conditions.air_temp(simulation_time_iteration);
+                let outside_temp = self.external_conditions.air_temp(timestep);
 
                 let min_flow_temp = self.min_flow_temp.unwrap();
                 let max_flow_temp = self.max_flow_temp.unwrap();
@@ -1064,7 +1050,7 @@ impl Emitters {
         temp_emitter_max: f64,
         temp_return: f64,
         temp_flow_target: f64,
-        simulation_time: SimulationTimeIteration,
+        simulation_time: Timestep,
     ) -> anyhow::Result<(f64, bool, Option<BufferTankEmittersDataWithResult>)> {
         // When there is some demand, calculate max. emitter temperature
         // achievable and emitter temperature required, and base calculation
@@ -1333,7 +1319,7 @@ impl Emitters {
         energy_demand: f64,
         temp_flow_target: f64,
         temp_return_target: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         update_heat_source_state: Option<bool>,
         update_temp_emitter_prev: Option<bool>,
         blended_temp_flow: Option<f64>,
@@ -1344,7 +1330,7 @@ impl Emitters {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let update_temp_emitter_prev = update_temp_emitter_prev.unwrap_or(true);
 
-        let timestep = simtime.timestep;
+        let timestep = simtime.step;
         let temp_rm_prev = self.zone.temp_internal_air();
 
         // Calculate target flow and return temperature
@@ -1613,11 +1599,11 @@ impl Emitters {
     pub(crate) fn demand_energy(
         emitters: Arc<Self>,
         energy_demand: f64,
-        simulation_time: SimulationTimeIteration,
+        simulation_time: Timestep,
     ) -> anyhow::Result<f64> {
         // ecodesign controls to determine flow temperature,
         // and 6/7th rule to calculate the initial return temperature
-        let (temp_flow_target, temp_return_target) = emitters.temp_flow_return(&simulation_time);
+        let (temp_flow_target, temp_return_target) = emitters.temp_flow_return(simulation_time);
 
         // Coasting minimum output for this timestep, used as the threshold below
         // which the emitter coasts without heat source input. Calculated once and
@@ -1669,7 +1655,7 @@ impl Emitters {
         energy_demand: f64,
         temp_flow_target: f64,
         mut temp_return_target: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         energy_output_min: f64,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let update_heat_source_state = false;
@@ -1709,7 +1695,7 @@ impl Emitters {
                 }
 
                 // The flow rate is calculated from energy_released_from_emitters and delta T
-                let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
+                let power_released_from_emitters = energy_released_from_emitters / simtime.step;
                 let flow_rate_m3s = power_released_from_emitters
                     / (specific_heat_capacity * density * self_ref.temp_diff_emit_dsgn);
                 let flow_rate = flow_rate_m3s * LITRES_PER_CUBIC_METRE as f64;
@@ -1844,7 +1830,7 @@ impl Emitters {
         specific_heat_capacity: f64,
         density: f64,
         flow_rate_m3s: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         update_heat_source_state: bool,
         update_temp_emitter_prev: bool,
         energy_output_min: f64,
@@ -1861,7 +1847,7 @@ impl Emitters {
                 None,
                 energy_output_min,
             )?;
-            let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
+            let power_released_from_emitters = energy_released_from_emitters / simtime.step;
             let calculated_power =
                 specific_heat_capacity * density * flow_rate_m3s * (temp_flow_target - temp_return);
 
@@ -1942,14 +1928,11 @@ impl Emitters {
     }
 
     /// Calculate minimum possible energy output
-    pub(crate) fn energy_output_min(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub(crate) fn energy_output_min(&self, simtime: Timestep) -> anyhow::Result<f64> {
         Ok(if self.fancoil.is_some() {
             0.
         } else {
-            let timestep = simtime.timestep;
+            let timestep = simtime.step;
             let temp_rm_prev = self.zone.temp_internal_air();
 
             let (temp_emitter, _) = self.temp_emitter(
@@ -2972,7 +2955,7 @@ mod tests {
     #[rstest]
     fn test_temp_setpnt(simulation_time_iterator: SimulationTimeIterator, fancoil: Emitters) {
         for step in simulation_time_iterator {
-            assert_relative_eq!(fancoil.temp_setpnt(&step).unwrap(), 20., epsilon = 1e-5);
+            assert_relative_eq!(fancoil.temp_setpnt(step).unwrap(), 20., epsilon = 1e-5);
         }
     }
 
@@ -2982,7 +2965,7 @@ mod tests {
         fancoil: Emitters,
     ) {
         for step in simulation_time_iterator {
-            assert!(fancoil.in_required_period(&step).unwrap());
+            assert!(fancoil.in_required_period(step).unwrap());
         }
     }
 
@@ -3206,7 +3189,7 @@ mod tests {
 
         assert_relative_eq!(
             emitter
-                .temp_flow_return(&simulation_time_iterator.next().unwrap())
+                .temp_flow_return(simulation_time_iterator.next().unwrap())
                 .1,
             60.,
             epsilon = 1e-5
@@ -3365,21 +3348,21 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
+            emitters.temp_flow_return(simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 50.8333, max_relative = 1e-2);
         assert_relative_eq!(return_temp, 43.5714, max_relative = 1e-2);
 
         // Test with different outdoor temp
         let (flow_temp, return_temp) = emitters_with_different_outdoor_temp
-            .temp_flow_return(&simulation_time_iterator.current_iteration());
+            .temp_flow_return(simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55., max_relative = 1e-2);
         assert_relative_eq!(return_temp, 47.1428, max_relative = 1e-2);
 
         // Test with different control class
         let (flow_temp, return_temp) = emitters_with_different_control_class
-            .temp_flow_return(&simulation_time_iterator.current_iteration());
+            .temp_flow_return(simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55.);
         assert_relative_eq!(

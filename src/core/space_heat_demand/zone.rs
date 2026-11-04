@@ -2,7 +2,7 @@
 // and to calculate the temperatures in the zone and associated building elements.
 use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::material_properties::AIR;
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep};
 use crate::core::space_heat_demand::building_element::BuildingElement;
 use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
@@ -211,7 +211,7 @@ impl Zone {
         &self,
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<()> {
         // Set starting point for all node temperatures (elements of
         //                                               # self.__temp_prev) as average of external air temp and setpoint. This
@@ -291,7 +291,7 @@ impl Zone {
 
     /// sum solar gains for all elements in the zone
     /// only transparent elements will have solar gains > 0
-    pub(crate) fn gains_solar(&self, simulation_time: SimulationTimeIteration) -> f64 {
+    pub(crate) fn gains_solar(&self, simulation_time: Timestep) -> f64 {
         self.building_elements
             .iter()
             .map(|el| el.element.solar_gains(simulation_time).unwrap())
@@ -353,7 +353,7 @@ impl Zone {
         f_hc_c: f64,
         ach: f64,
         avg_supply_temp: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         print_heat_balance: bool,
     ) -> anyhow::Result<(Vec<f64>, Option<HeatBalance>)> {
         let h_ve = self.calc_vent_heat_transfer_coeff(ach);
@@ -983,7 +983,7 @@ impl Zone {
         temp_int_air_free: f64,
         ach_args: AirChangesPerHourArgument,
         avg_supply_temp: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(f64, f64, Option<f64>)> {
         let mut temp_free = temp_free;
 
@@ -1187,7 +1187,7 @@ impl Zone {
         gains_heat_cool_convective: Option<f64>,
         gains_heat_cool_radiative: Option<f64>,
         ach_args: AirChangesPerHourArgument,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64, Option<f64>)> {
         let gains_heat_cool_convective = gains_heat_cool_convective.unwrap_or(0.0);
         let gains_heat_cool_radiative = gains_heat_cool_radiative.unwrap_or(0.0);
@@ -1198,7 +1198,7 @@ impl Zone {
 
         let temp_setpnt_cool_vent = if let Some(control) = self.control.clone() {
             let temp_setpnt_cool_vent_response = control
-                .setpnt(&simulation_time_iteration)
+                .setpnt(timestep)
                 .unwrap_or_else(|| kelvin_to_celsius(1.4e32).expect("Not below absolute zero"));
             if temp_setpnt_cool_vent_response < temp_setpnt_heat {
                 bail!("Setpoint for additional ventilation is below heating setpoint.");
@@ -1238,7 +1238,7 @@ impl Zone {
                 AirChangesPerHourArgument::TargetAndWindowsOpen { ach_target, .. } => ach_target,
             },
             avg_air_supply_temp,
-            simulation_time_iteration,
+            timestep,
             false,
         )?;
 
@@ -1267,7 +1267,7 @@ impl Zone {
                 temp_int_air_free,
                 ach_args,
                 avg_air_supply_temp,
-                simulation_time_iteration,
+                timestep,
             )?;
 
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
@@ -1314,7 +1314,7 @@ impl Zone {
             frac_convective_heat_cool_upper,
             ach_cooling,
             avg_air_supply_temp,
-            simulation_time_iteration,
+            timestep,
             false,
         )?;
 
@@ -1371,7 +1371,7 @@ impl Zone {
         frac_convective: f64,
         ach: f64,
         avg_supply_temp: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<Option<HeatBalance>> {
         let (temp_prev, heat_balance_map) = self.calc_temperatures(
             delta_t,
@@ -1383,7 +1383,7 @@ impl Zone {
             frac_convective,
             ach,
             avg_supply_temp,
-            simulation_time_iteration,
+            timestep,
             self.print_heat_balance,
         )?;
 
@@ -2358,11 +2358,11 @@ mod tests {
 
     #[rstest]
     fn test_gains_solar(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         assert_relative_eq!(
             zone(thermal_bridging_objects, None)
                 .unwrap()
-                .gains_solar(simulation_time_iteration),
+                .gains_solar(timestep),
             -2154.583062153444
         );
     }
@@ -2556,7 +2556,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_1(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
             .unwrap()
             .calc_cooling_potential_from_ventilation(
@@ -2573,7 +2573,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2584,7 +2584,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_2(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
             .unwrap()
             .calc_cooling_potential_from_ventilation(
@@ -2601,7 +2601,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2612,7 +2612,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_3(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
             .unwrap()
             .calc_cooling_potential_from_ventilation(
@@ -2629,7 +2629,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2640,7 +2640,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_4(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
@@ -2658,7 +2658,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2669,7 +2669,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_5(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
@@ -2687,7 +2687,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2698,7 +2698,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_6(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
@@ -2716,7 +2716,7 @@ mod tests {
                 20.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2738,7 +2738,7 @@ mod tests {
     fn test_calc_cooling_potential_ventilation_at_cooling_setpoint_boundary(
         thermal_bridging_objects: ThermalBridging,
     ) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let mut zone = zone(thermal_bridging_objects, None).unwrap();
         let temp_vent_achieved = 15.144632024928118;
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
@@ -2757,7 +2757,7 @@ mod tests {
                 25.0,
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
                 17.8,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2799,7 +2799,7 @@ mod tests {
     #[rstest]
     /// errors when cooling setpoint is below heating setpoint
     fn test_space_heat_cool_demand_1(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let zone = zone(thermal_bridging_objects, None).unwrap();
         let space_heat_cool_demand = zone.space_heat_cool_demand(
             0.5,
@@ -2814,14 +2814,14 @@ mod tests {
             Some(0.0),
             Some(0.0),
             AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-            simulation_time_iteration,
+            timestep,
         );
         assert!(space_heat_cool_demand.is_err());
     }
 
     #[rstest]
     fn test_space_heat_cool_demand_2(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let zone = zone(thermal_bridging_objects, None).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2837,7 +2837,7 @@ mod tests {
                 Some(0.0),
                 Some(0.0),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2853,7 +2853,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_3(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(Some(25.));
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -2870,7 +2870,7 @@ mod tests {
                 Some(0.0),
                 Some(0.0),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2896,7 +2896,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_5(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -2913,7 +2913,7 @@ mod tests {
                 Some(0.0),
                 Some(0.0),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2925,7 +2925,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_6(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let space_heat_cool_demand = zone.space_heat_cool_demand(
@@ -2941,7 +2941,7 @@ mod tests {
             Some(0.0),
             Some(0.0),
             AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-            simulation_time_iteration,
+            timestep,
         );
 
         assert!(space_heat_cool_demand.is_err());
@@ -2949,7 +2949,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_7(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -2966,7 +2966,7 @@ mod tests {
                 Some(0.2),
                 Some(0.3),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -2978,7 +2978,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_8(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -2995,7 +2995,7 @@ mod tests {
                 Some(0.),
                 Some(0.),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -3007,7 +3007,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_9(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -3024,7 +3024,7 @@ mod tests {
                 Some(0.),
                 Some(0.),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -3036,7 +3036,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_10(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
@@ -3053,7 +3053,7 @@ mod tests {
                 Some(0.),
                 Some(0.),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -3065,7 +3065,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_11(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
@@ -3084,7 +3084,7 @@ mod tests {
                 Some(0.),
                 Some(0.),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -3096,7 +3096,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_12(thermal_bridging_objects: ThermalBridging) {
-        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let timestep = simulation_time().iter().next().unwrap();
         let fake_control = fake_control_with_setpnt(None);
         let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
@@ -3115,7 +3115,7 @@ mod tests {
                 Some(0.),
                 Some(0.),
                 AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 

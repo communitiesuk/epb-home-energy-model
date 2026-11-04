@@ -1,4 +1,4 @@
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::input::WwhrsConfiguration as WwhrsConfigurationInput;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
 use anyhow::{anyhow, bail};
@@ -202,7 +202,7 @@ impl WwhrsInstantaneous {
         flowrate_waste_water: f64,
         volume_cold_water: f64,
         temp_hot: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         match system_type {
             WwhrsConfiguration::AShowerAndWaterHeatingSystem => self.calculate_system_a(
@@ -210,21 +210,21 @@ impl WwhrsInstantaneous {
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
-                simulation_time_iteration,
+                timestep,
             ),
             WwhrsConfiguration::BShower => self.calculate_system_b(
                 temp_target,
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
-                simulation_time_iteration,
+                timestep,
             ),
             WwhrsConfiguration::CWaterHeatingSystem => self.calculate_system_c(
                 temp_target,
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
-                simulation_time_iteration,
+                timestep,
             ),
         }
     }
@@ -236,7 +236,7 @@ impl WwhrsInstantaneous {
         flowrate_waste_water: f64,
         volume_cold_water: f64,
         temp_hot: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         if self.system_a_utilisation_factor.is_none() {
             bail!("system_a_utilisation_factor is required for System A calculation");
@@ -244,7 +244,7 @@ impl WwhrsInstantaneous {
 
         let list_temp_vol = self
             .cold_water_source
-            .get_temp_cold_water(volume_cold_water, simulation_time_iteration)?;
+            .get_temp_cold_water(volume_cold_water, timestep)?;
         let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
             .value()
             / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
@@ -283,11 +283,11 @@ impl WwhrsInstantaneous {
         flowrate_waste_water: f64,
         volume_cold_water: f64,
         temp_hot: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         let list_temp_vol = self
             .cold_water_source
-            .get_temp_cold_water(volume_cold_water, simulation_time_iteration)?;
+            .get_temp_cold_water(volume_cold_water, timestep)?;
         let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
             .value()
             / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
@@ -358,11 +358,11 @@ impl WwhrsInstantaneous {
         flowrate_waste_water: f64,
         volume_cold_water: f64,
         temp_hot: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         let list_temp_vol = self
             .cold_water_source
-            .get_temp_cold_water(volume_cold_water, simulation_time_iteration)?;
+            .get_temp_cold_water(volume_cold_water, timestep)?;
         let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
             .value()
             / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
@@ -479,7 +479,7 @@ impl WwhrsInstantaneous {
     pub(crate) fn get_temp_cold_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let mut result: Vec<(f64, f64)> = Vec::new();
 
@@ -528,7 +528,7 @@ impl WwhrsInstantaneous {
     pub(crate) fn draw_off_water(
         &self,
         volume_needed: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let mut result: Vec<(f64, f64)> = Vec::new();
 
@@ -1093,7 +1093,7 @@ mod tests {
     ) {
         // Create cold water source with temp matching target
         let cold_water_source = ColdWaterSource::new(vec![35.0, 35.0, 35.0], 0, 1.0);
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
 
         let wwhrs = WwhrsInstantaneous::new(
             flow_rates,
@@ -1116,7 +1116,7 @@ mod tests {
                 8.,
                 8.,
                 55.,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -1320,7 +1320,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
         let system_b_efficiencies = vec![36.3, 31.7, 28.2, 25.4, 23.2];
 
         let wwhrs = WwhrsInstantaneous::new(
@@ -1338,14 +1338,7 @@ mod tests {
         .unwrap();
 
         wwhrs
-            .calculate_performance(
-                WwhrsConfiguration::BShower,
-                35.,
-                8.,
-                8.,
-                55.,
-                simulation_time_iteration,
-            )
+            .calculate_performance(WwhrsConfiguration::BShower, 35., 8., 8., 55., timestep)
             .unwrap();
 
         // Verify it uses specific efficiencies, not reduction factor
@@ -1369,7 +1362,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
         let system_c_efficiencies = vec![38.9, 34.0, 30.3, 27.3, 24.8];
 
         let wwhrs = WwhrsInstantaneous::new(
@@ -1393,7 +1386,7 @@ mod tests {
                 8.,
                 8.,
                 55.,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -1417,7 +1410,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
 
         let wwhrs = WwhrsInstantaneous::new(
             flow_rates,
@@ -1435,14 +1428,7 @@ mod tests {
 
         // System B uses flowrate_cold_water if provided
         let result = wwhrs
-            .calculate_performance(
-                WwhrsConfiguration::BShower,
-                35.,
-                8.,
-                6.,
-                55.,
-                simulation_time_iteration,
-            )
+            .calculate_performance(WwhrsConfiguration::BShower, 35., 8., 6., 55., timestep)
             .unwrap();
 
         assert_eq!(result.flowrate_hot, 3.297999789473684); // Should use provided value
@@ -1461,7 +1447,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
 
         let wwhrs = WwhrsInstantaneous::new(
             flow_rates,
@@ -1485,7 +1471,7 @@ mod tests {
                 8.,
                 8.,
                 20.1038,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -1502,7 +1488,7 @@ mod tests {
         system_a_utilisation_factor: Option<f64>,
         simulation_time: SimulationTime,
     ) {
-        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let timestep = simulation_time.iter().next().unwrap();
         let cold_water_source = ColdWaterSource::new(vec![55.0, 55.0, 55.0], 0, 1.0).into();
 
         let wwhrs = WwhrsInstantaneous::new(
@@ -1526,7 +1512,7 @@ mod tests {
                 8.,
                 8.,
                 55.,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
 
@@ -1856,7 +1842,7 @@ mod tests {
             cold_water_source: Arc<ColdWaterSource>,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let timestep = simulation_time.iter().next().unwrap();
             let wwhrs = WwhrsInstantaneous::new(
                 flow_rates,
                 efficiencies,
@@ -1891,7 +1877,7 @@ mod tests {
                         shower_flow,
                         8.0,
                         hot_water_temp,
-                        simulation_time_iteration,
+                        timestep,
                     )
                     .unwrap();
                 results.insert(system, result);
@@ -1908,7 +1894,7 @@ mod tests {
             efficiencies: Option<Vec<f64>>,
             simulation_time: SimulationTime,
         ) {
-            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let timestep = simulation_time.iter().next().unwrap();
 
             // Very low temperature difference
             let cold_water_source_warm =
@@ -1934,7 +1920,7 @@ mod tests {
                     8.0,
                     8.0,
                     55.0,
-                    simulation_time_iteration,
+                    timestep,
                 )
                 .unwrap();
 

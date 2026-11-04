@@ -17,8 +17,8 @@ use crate::core::heating_systems::storage_tank::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::simulation_time::SimulationTimeIterator;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::{
     self, KILOJOULES_PER_KILOWATT_HOUR, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, SECONDS_PER_MINUTE,
     WATTS_PER_KILOWATT,
@@ -147,7 +147,7 @@ pub(crate) fn validate_no_schedule_overlap(
     for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<ArcStr> = Vec::new();
         for (src_name, charging_source) in heat_source_data {
-            if let (_, Some(_)) = charging_source.control.setpnt(&t_it) {
+            if let (_, Some(_)) = charging_source.control.setpnt(t_it) {
                 active_sources.push(src_name.clone());
             }
         }
@@ -198,11 +198,8 @@ impl HeatBatteryPcmServiceWaterRegular {
     }
 
     /// Return setpoint (not necessarily temperature)
-    pub(crate) fn setpnt(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt(&simulation_time_iteration)
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
+        self.control.setpnt(timestep)
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -212,7 +209,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         temp_flow: Option<f64>,
         temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         ignore_standard_ctrl: bool,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simtime) || ignore_standard_ctrl;
@@ -236,7 +233,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         &self,
         temp_flow: f64,
         temp_return: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         ignore_standard_ctrl: bool,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simtime) || ignore_standard_ctrl;
@@ -249,8 +246,8 @@ impl HeatBatteryPcmServiceWaterRegular {
             .energy_output_max(temp_flow, temp_return, Some(0.), simtime)
     }
 
-    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(&simtime)
+    fn is_on(&self, simtime: Timestep) -> bool {
+        self.control.is_on(simtime)
     }
 }
 
@@ -289,7 +286,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         &self.cold_feed
     }
 
-    fn temp_hot_water(&self, vol: f64, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    fn temp_hot_water(&self, vol: f64, simtime: Timestep) -> anyhow::Result<f64> {
         let list_temp_vol = self.cold_feed.get_temp_cold_water(vol, simtime)?;
         let inlet_temp =
             calculate_volume_weighted_average_temperature(list_temp_vol, Some(vol), None)?;
@@ -303,7 +300,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         &self,
         volume_req: f64,
         volume_req_already: Option<f64>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.);
 
@@ -312,8 +309,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         }
 
         let volume_req_cumulative = volume_req + volume_req_already;
-        let temp_hot_water_cumulative =
-            self.temp_hot_water(volume_req_cumulative, simulation_time_iteration)?;
+        let temp_hot_water_cumulative = self.temp_hot_water(volume_req_cumulative, timestep)?;
 
         // Base temperature on the part of the draw-off for volume_req, and
         // ignore any volume previously considered
@@ -325,8 +321,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         ) {
             temp_hot_water_cumulative
         } else {
-            let temp_hot_water_req_already =
-                self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
+            let temp_hot_water_req_already = self.temp_hot_water(volume_req_already, timestep)?;
 
             (temp_hot_water_cumulative * volume_req_cumulative
                 - temp_hot_water_req_already * volume_req_already)
@@ -339,7 +334,7 @@ impl HeatBatteryPcmServiceWaterDirect {
     pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<WaterEventResult>>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.;
         let mut total_volume = 0.;
@@ -424,15 +419,12 @@ impl HeatBatteryPcmServiceSpace {
         }
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
-        self.control.setpnt(&simulation_time_iteration)
+    pub fn temp_setpnt(&self, timestep: Timestep) -> Option<f64> {
+        self.control.setpnt(timestep)
     }
 
-    pub fn in_required_period(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> Option<bool> {
-        self.control.in_required_period(&simulation_time_iteration)
+    pub fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
+        self.control.in_required_period(timestep)
     }
 
     /// Demand energy (in kWh) from the heat battery
@@ -443,7 +435,7 @@ impl HeatBatteryPcmServiceSpace {
         temp_return: f64,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let service_on = self.is_on(simtime);
@@ -463,8 +455,8 @@ impl HeatBatteryPcmServiceSpace {
         )
     }
 
-    fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        self.control.is_on(&simulation_time_iteration)
+    fn is_on(&self, timestep: Timestep) -> bool {
+        self.control.is_on(timestep)
     }
 
     pub(crate) fn energy_output_max(
@@ -472,7 +464,7 @@ impl HeatBatteryPcmServiceSpace {
         temp_output: f64,
         temp_return_feed: f64,
         time_start: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
 
@@ -732,7 +724,7 @@ impl HeatBatteryPcm {
             primary_pipework.unwrap_or_default(),
             Arc::new(move |simtime| external_conditions_for_pipework.air_temp(simtime)),
             temp_internal_air_callback,
-            &simulation_time.current_iteration(),
+            simulation_time.current_iteration(),
         );
         // Per-source hysteresis state: tracks whether each source is currently
         // in its active charging band (SOC below upper setpoint after being
@@ -948,7 +940,7 @@ impl HeatBatteryPcm {
         }
         let mut temp_observed_max = temp_flow_max;
         for _ in simtime_iterator.clone() {
-            let (lower, upper) = source.control.setpnt(&simtime_iterator.current_iteration());
+            let (lower, upper) = source.control.setpnt(simtime_iterator.current_iteration());
             if let Some(lower) = lower {
                 temp_observed_max = lower.max(temp_observed_max);
             }
@@ -1297,9 +1289,9 @@ impl HeatBatteryPcm {
     /// returns 0 because charging dispatch is handled per-source in timestep_end().
     ///   Returns:
     ///      Charging power in kW.
-    fn electric_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    fn electric_charge(&self, simtime: Timestep) -> anyhow::Result<f64> {
         Ok(if let Some(control) = &self.charge_control {
-            if control.is_on(&simtime) {
+            if control.is_on(simtime) {
                 self.pwr_in.ok_or_else(|| {
                     anyhow::anyhow!(
                         "pwr_in was expected to be set when a charge_control is present"
@@ -2090,7 +2082,7 @@ impl HeatBatteryPcm {
     fn charge_battery(
         &self,
         time_remaining_current_timestep: f64,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
         let zone_temp_c_after_charging = self.zone_temp_c_dist_initial.read().clone();
 
@@ -2099,15 +2091,15 @@ impl HeatBatteryPcm {
             // The order of processing heat sources shouldn't matter because
             // their schedules should not overlap.
             for (src, source) in self.heat_source_data.as_ref().unwrap_or(&IndexMap::new()) {
-                self.determine_heat_source_switch_on(src, source, simtime)?;
-                self.determine_heat_source_switch_off(src, source, simtime)?;
+                self.determine_heat_source_switch_on(src, source, timestep)?;
+                self.determine_heat_source_switch_off(src, source, timestep)?;
                 if *self.charging_active.read().get(src).unwrap_or(&false) {
                     // Use the upper setpoint from the source's RangeTimeControl
                     // as the SOC target for charging. This limits both the
                     // temperature target in zone heat exchange and the energy
                     // demand calculation, preventing overcharging beyond the
                     // hysteresis upper threshold within a single timestep.
-                    let (_, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
+                    let (_, setpnt_upper) = self.resolve_setpoints(source, timestep)?;
                     let target_soc = if let Some(setpnt_upper) = setpnt_upper {
                         setpnt_upper
                     } else {
@@ -2126,7 +2118,7 @@ impl HeatBatteryPcm {
                                     source,
                                     time_remaining_current_timestep,
                                     target_soc,
-                                    simtime,
+                                    timestep,
                                 );
                             } else {
                                 bail!("Heat source service must not be None for HeatSourceWet charging source");
@@ -2173,7 +2165,7 @@ impl HeatBatteryPcm {
                             Some(*temp_flow_max),
                             Some(temp_return),
                             None,
-                            *simtime,
+                            timestep,
                         )?;
                         // Report zero input to pipework loss tracker for event
                         // boundary detection
@@ -2181,17 +2173,17 @@ impl HeatBatteryPcm {
                             0.0,
                             Some(*temp_flow_max),
                             Some(true),
-                            simtime,
+                            timestep,
                         )?;
                     }
                 }
             }
             Ok((0., zone_temp_c_after_charging))
         } else if let Some(charge_control) = &self.charge_control {
-            if charge_control.is_on(simtime) {
+            if charge_control.is_on(timestep) {
                 // ChargeControl: single electric element with temperature-based proxy
-                let pwr_in = self.electric_charge(*simtime)?;
-                let target = charge_control.target_charge(*simtime, None);
+                let pwr_in = self.electric_charge(timestep)?;
+                let target = charge_control.target_charge(timestep, None);
                 return self.charge_battery_electric(pwr_in, target);
             }
             Ok((0., zone_temp_c_after_charging))
@@ -2225,7 +2217,7 @@ impl HeatBatteryPcm {
         source: &HeatBatteryChargingSource,
         time_available_hrs: f64,
         target_charge_fraction: f64,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
         if let HeatBatteryChargingSource {
             heat_source_service,
@@ -2288,13 +2280,13 @@ impl HeatBatteryPcm {
                     Some(*temp_flow_max),
                     Some(temp_return),
                     None,
-                    *simtime,
+                    timestep,
                 )?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.0,
                     Some(*temp_flow_max),
                     Some(true),
-                    simtime,
+                    timestep,
                 )?;
                 return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
             }
@@ -2305,7 +2297,7 @@ impl HeatBatteryPcm {
             // temperatures. This is side-effect-free (no energy consumption
             // recorded), giving the maximum energy the heat source can deliver.
             let energy_max =
-                heat_source_service.energy_output_max(temp_flow, temp_return, None, *simtime)?;
+                heat_source_service.energy_output_max(temp_flow, temp_return, None, timestep)?;
 
             if relative_eq!(energy_max, 0.0, epsilon = 1e-10) {
                 // Heat source has no capacity — call demand_energy(0) for reporting
@@ -2314,13 +2306,13 @@ impl HeatBatteryPcm {
                     temp_flow.into(),
                     temp_return.into(),
                     None,
-                    *simtime,
+                    timestep,
                 )?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.,
                     Some(temp_flow),
                     Some(true),
-                    simtime,
+                    timestep,
                 )?;
                 return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
             } else if energy_max < 0. {
@@ -2341,7 +2333,7 @@ impl HeatBatteryPcm {
                         energy_demand_total,
                         Some(temp_flow),
                         Some(true),
-                        simtime,
+                        timestep,
                     )?;
 
                 // Energy available for the battery is what the heat source can
@@ -2375,7 +2367,7 @@ impl HeatBatteryPcm {
                     temp_flow.into(),
                     temp_return.into(),
                     None,
-                    *simtime,
+                    timestep,
                 )?;
 
                 // Accumulate internal pipework gains for return via get_battery_losses().
@@ -2410,9 +2402,9 @@ impl HeatBatteryPcm {
         &self,
         source_name: &str,
         source: &HeatBatteryChargingSource,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<()> {
-        let (setpnt_lower, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
+        let (setpnt_lower, setpnt_upper) = self.resolve_setpoints(source, timestep)?;
         if setpnt_upper.is_some() {
             let soc = self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
             if let Some(setpnt_lower) = setpnt_lower {
@@ -2444,9 +2436,9 @@ impl HeatBatteryPcm {
         &self,
         source_name: &str,
         source: &HeatBatteryChargingSource,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<()> {
-        let (_, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
+        let (_, setpnt_upper) = self.resolve_setpoints(source, timestep)?;
         let soc = self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
         if setpnt_upper.is_none_or(|upper| soc > upper || relative_eq!(soc, upper, epsilon = 1e-10))
         {
@@ -2554,7 +2546,7 @@ impl HeatBatteryPcm {
         inlet_temp: f64,
         volume: f64,
         setpoint_temp: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let total_time_s = volume / self.flow_rate_l_per_min * SECONDS_PER_MINUTE as f64;
 
@@ -2636,7 +2628,7 @@ impl HeatBatteryPcm {
         _temp_output: f64,
         temp_return_feed: f64,
         time_start: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let timestep = self.simulation_time_step;
@@ -2743,7 +2735,7 @@ impl HeatBatteryPcm {
         service_on: bool,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         // Return the energy provided by the HB during a HEM time step (assuming
         // an inlet temperature constant) and update the HB state (zones distribution temperatures)
@@ -2987,7 +2979,7 @@ impl HeatBatteryPcm {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&self, simtime: Timestep) -> anyhow::Result<()> {
         let timestep = self.simulation_time_step;
         let time_remaining_current_timestep = timestep
             - self
@@ -3016,7 +3008,7 @@ impl HeatBatteryPcm {
         // time is added back because it uses a separate heat exchanger and
         // can happen simultaneously with hydronic charging.
         let (end_of_ts_charge, zone_temp_c_after_charging) =
-            self.charge_battery(time_remaining_for_charging, &simtime)?;
+            self.charge_battery(time_remaining_for_charging, simtime)?;
 
         self.energy_supply_connection.demand_energy(
             self.energy_charged_electric.load(Ordering::SeqCst) * self.n_units as f64,
@@ -3303,7 +3295,7 @@ impl HeatBatteryPcm {
         std::result::Result::Ok((results_per_timestep, results_annual))
     }
 
-    fn target_charge(&self, simtime: SimulationTimeIteration) -> f64 {
+    fn target_charge(&self, simtime: Timestep) -> f64 {
         if let Some(charge) = &self.charge_control {
             charge.target_charge(simtime, None)
         } else {
@@ -3326,9 +3318,9 @@ impl HeatBatteryPcm {
     fn resolve_setpoints(
         &self,
         source: &HeatBatteryChargingSource,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let (mut setpnt_lower, mut setpnt_upper) = source.control.setpnt(simtime);
+        let (mut setpnt_lower, mut setpnt_upper) = source.control.setpnt(timestep);
         if source.schedule_unit == ScheduleUnit::Temperature {
             if let Some(lower) = setpnt_lower {
                 setpnt_lower = Some(self.temp_to_soc(lower)?);
@@ -3362,9 +3354,7 @@ mod tests {
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
     use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::core::simulation_time::{
-        SimulationTime, SimulationTimeIteration, SimulationTimeIterator,
-    };
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator, Timestep};
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
@@ -3393,9 +3383,7 @@ mod tests {
     }
 
     #[fixture]
-    fn simulation_time_iteration(
-        simulation_time_iterator: SimulationTimeIterator,
-    ) -> SimulationTimeIteration {
+    fn timestep(simulation_time_iterator: SimulationTimeIterator) -> Timestep {
         simulation_time_iterator.current_iteration()
     }
 
@@ -3767,7 +3755,7 @@ mod tests {
     #[rstest]
     fn test_demand_energy_inlet_hotter_than_battery_delivers_zero(
         battery_control_on: Arc<ChargeControl>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         // demand_energy delivers nothing when the return-feed inlet is hotter than the core.
         //
@@ -3787,7 +3775,7 @@ mod tests {
                 true,
                 None,
                 None,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
         assert_eq!(delivered, 0.0);
@@ -3795,7 +3783,7 @@ mod tests {
     // in Python this test is called test_service_is_on_with_control
     #[rstest]
     fn test_service_is_on_when_service_control_is_on(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
     ) {
         // Test when controlvent is provided and returns True
@@ -3809,7 +3797,7 @@ mod tests {
             SetpointOrCombinationControl::SetpointTime(service_control_on),
         );
 
-        assert!(heat_battery_service.is_on(simulation_time_iteration));
+        assert!(heat_battery_service.is_on(timestep));
 
         let service_control_off = create_setpoint_time_control(vec![None, None]);
 
@@ -3819,7 +3807,7 @@ mod tests {
             SetpointOrCombinationControl::SetpointTime(service_control_off),
         );
 
-        assert!(!heat_battery_service.is_on(simulation_time_iteration));
+        assert!(!heat_battery_service.is_on(timestep));
     }
 
     #[fixture]
@@ -3851,13 +3839,13 @@ mod tests {
     #[rstest]
     fn test_get_temp_hot_water_for_water_direct(
         mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
 
         let expected = vec![(60., 20.)];
         let actual = heat_battery_service_water_direct
-            .get_temp_hot_water(20., None, simulation_time_iteration)
+            .get_temp_hot_water(20., None, timestep)
             .unwrap();
 
         assert_eq!(actual, expected)
@@ -3931,13 +3919,13 @@ mod tests {
     // test_service_is_on_without_control
     #[rstest]
     fn test_service_with_no_service_control_is_always_on_for_water_regular(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
     ) {
         let heat_battery_service =
             create_service_water_regular_with_controls(battery_control_off, Some(true));
 
-        assert!(heat_battery_service.is_on(simulation_time_iteration));
+        assert!(heat_battery_service.is_on(timestep));
     }
 
     // this test accounts for python test test_setpnt_with_range_time_control as we only deal with RTC in Rust
@@ -3971,7 +3959,7 @@ mod tests {
     // In Python this is test_demand_energy_service_off
     #[rstest]
     fn test_demand_energy_returns_zero_when_service_control_is_off_for_water_regular(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         simulation_time_iterator: SimulationTimeIterator,
         battery_control_on: Arc<ChargeControl>,
     ) {
@@ -4005,7 +3993,7 @@ mod tests {
                 Some(temp_flow),
                 Some(temp_return),
                 None,
-                simulation_time_iteration,
+                timestep,
                 false,
             )
             .unwrap();
@@ -4020,7 +4008,7 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_service_off_for_water_regular(
         // In Python this is test_energy_output_max_service_off
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
     ) {
         let heat_battery_service =
@@ -4029,17 +4017,14 @@ mod tests {
         let temp_flow = 50.0;
         let temp_return = 40.0;
         let result = heat_battery_service
-            .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
+            .energy_output_max(temp_flow, temp_return, timestep, false)
             .unwrap();
 
         assert_relative_eq!(result, 0., epsilon = 1e-7);
     }
 
     #[rstest]
-    fn test_temp_setpnt_for_space(
-        simulation_time_iteration: SimulationTimeIteration,
-        battery_control_off: Arc<ChargeControl>,
-    ) {
+    fn test_temp_setpnt_for_space(timestep: Timestep, battery_control_off: Arc<ChargeControl>) {
         let first_scheduled_temp = Some(21.);
         let ctrl = create_setpoint_time_control(vec![first_scheduled_temp]);
         let heat_battery = create_heat_battery(battery_control_off, None);
@@ -4050,14 +4035,14 @@ mod tests {
         );
 
         assert_eq!(
-            heat_battery_space.temp_setpnt(simulation_time_iteration),
+            heat_battery_space.temp_setpnt(timestep),
             first_scheduled_temp
         );
     }
 
     #[rstest]
     fn test_in_required_period_for_space(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
     ) {
         let ctrl = create_setpoint_time_control(vec![Some(21.)]);
@@ -4068,15 +4053,12 @@ mod tests {
             SetpointOrCombinationControl::SetpointTime(ctrl),
         );
 
-        assert_eq!(
-            heat_battery_space.in_required_period(simulation_time_iteration),
-            Some(true)
-        );
+        assert_eq!(heat_battery_space.in_required_period(timestep), Some(true));
     }
 
     #[rstest]
     fn test_demand_energy_service_off_for_space(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
 
         battery_control_off: Arc<ChargeControl>,
     ) {
@@ -4098,7 +4080,7 @@ mod tests {
                 temp_return,
                 Some(time_start),
                 None,
-                simulation_time_iteration,
+                timestep,
             )
             .unwrap();
         assert_eq!(result, 0.);
@@ -4110,7 +4092,7 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_service_off_for_space(
         battery_control_on: Arc<ChargeControl>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         let temp_output = 70.;
         let temp_return = 40.;
@@ -4124,7 +4106,7 @@ mod tests {
         );
 
         let result = heat_battery_service
-            .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
+            .energy_output_max(temp_output, temp_return, None, timestep)
             .unwrap();
 
         assert_relative_eq!(result, 0.);
@@ -4173,7 +4155,7 @@ mod tests {
 
     #[rstest]
     fn test_create_service_space_heating(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
     ) {
         let control = create_setpoint_time_control(vec![Some(21.0)]);
@@ -4185,7 +4167,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(service.is_on(simulation_time_iteration));
+        assert!(service.is_on(timestep));
         assert!(heat_battery
             .read()
             .energy_supply_connections
@@ -4194,30 +4176,18 @@ mod tests {
 
     #[rstest]
     fn test_electric_charge(
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
         battery_control_off: Arc<ChargeControl>,
         battery_control_on: Arc<ChargeControl>,
     ) {
         // electric charge should be 0 when battery control is off
         let heat_battery = create_heat_battery(battery_control_off, None);
 
-        assert_relative_eq!(
-            heat_battery
-                .read()
-                .electric_charge(simulation_time_iteration)
-                .unwrap(),
-            0.0
-        );
+        assert_relative_eq!(heat_battery.read().electric_charge(timestep).unwrap(), 0.0);
 
         // electric charge should be calculated when battery control is on
         let heat_battery = create_heat_battery(battery_control_on, None);
-        assert_relative_eq!(
-            heat_battery
-                .read()
-                .electric_charge(simulation_time_iteration)
-                .unwrap(),
-            20.0
-        );
+        assert_relative_eq!(heat_battery.read().electric_charge(timestep).unwrap(), 20.0);
     }
 
     #[rstest]
@@ -4340,7 +4310,7 @@ mod tests {
     #[rstest]
     fn test_demand_energy_simultaneous_no_temp_output(
         battery_control_off: Arc<ChargeControl>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         let heat_battery = create_heat_battery(battery_control_off, None);
         assert_relative_eq!(
@@ -4355,7 +4325,7 @@ mod tests {
                     true,
                     None,
                     None,
-                    simulation_time_iteration
+                    timestep
                 )
                 .unwrap(),
             0.0849030119531927
@@ -4373,7 +4343,7 @@ mod tests {
                     true,
                     None,
                     None,
-                    simulation_time_iteration
+                    timestep
                 )
                 .unwrap(),
             0.06506455710564082,
@@ -4500,7 +4470,7 @@ mod tests {
     #[rstest]
     fn test_dhw_service_demand_hot_water(
         battery_control_off: Arc<ChargeControl>,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         let heat_battery = create_heat_battery(battery_control_off, None);
         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
@@ -4539,15 +4509,13 @@ mod tests {
         ];
 
         let energy = service
-            .demand_hot_water(Some(usage_events), simulation_time_iteration)
+            .demand_hot_water(Some(usage_events), timestep)
             .unwrap();
 
         assert_eq!(energy, 0.46581279161760664);
 
         // Test with no usage events
-        let energy_no_usage = service
-            .demand_hot_water(None, simulation_time_iteration)
-            .unwrap();
+        let energy_no_usage = service.demand_hot_water(None, timestep).unwrap();
 
         assert_eq!(energy_no_usage, 0.);
     }
@@ -5095,12 +5063,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_temp_hot_water(
-        battery_control_off: Arc<ChargeControl>,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) {
+    fn test_get_temp_hot_water(battery_control_off: Arc<ChargeControl>, timestep: Timestep) {
         let heat_battery = create_heat_battery(battery_control_off, None);
-        let simtime = simulation_time_iteration;
+        let simtime = timestep;
 
         assert_relative_eq!(
             heat_battery
@@ -6217,7 +6182,7 @@ mod tests {
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
         simulation_time_iterator: SimulationTimeIterator,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) {
         // energy_output_max equals the energy demand_energy delivers at unlimited demand.
         //
@@ -6255,7 +6220,7 @@ mod tests {
             },
         )
         .read()
-        .energy_output_max(40.0, 30.0, None, simulation_time_iteration)
+        .energy_output_max(40.0, 30.0, None, timestep)
         .unwrap();
         let energy_delivered = create_default_heat_battery_with_overides(
             battery_control,
@@ -6276,7 +6241,7 @@ mod tests {
             true,
             None,
             Some(false),
-            simulation_time_iteration,
+            timestep,
         )
         .unwrap();
 
@@ -6811,13 +6776,13 @@ mod tests {
         #[rstest]
         fn test_new_format_does_not_use_legacy_charge_power(
             new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Rust stores pwr_in as f64; with no legacy ChargeControl, its effective power is zero.
             assert_relative_eq!(
                 new_format_heat_battery
                     .read()
-                    .electric_charge(simulation_time_iteration)
+                    .electric_charge(timestep)
                     .unwrap(),
                 0.0
             );
@@ -7096,7 +7061,7 @@ mod tests {
         #[rstest]
         fn test_charge_from_heat_source_delivers_energy(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             battery_control_off: Arc<ChargeControl>,
         ) {
             // charge_from_heat_source() calls energy_output_max for capacity check,
@@ -7113,7 +7078,7 @@ mod tests {
             );
             let (energy, zones_after) = battery
                 .read()
-                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .charge_from_heat_source(&source, 1.0, 1.0, timestep)
                 .unwrap();
 
             // Energy should be positive (battery absorbed heat).
@@ -7138,7 +7103,7 @@ mod tests {
         #[rstest]
         fn test_charge_from_heat_source_zero_capacity(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             battery_control_off: Arc<ChargeControl>,
         ) {
             // charge_from_heat_source() returns 0 when heat source has no capacity.
@@ -7146,7 +7111,7 @@ mod tests {
                 make_test_hydronic_battery(simulation_time, battery_control_off, 10.0, None, None);
             let (energy, _) = battery
                 .read()
-                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .charge_from_heat_source(&source, 1.0, 1.0, timestep)
                 .unwrap();
 
             assert_relative_eq!(energy, 0.0, epsilon = 1e-7);
@@ -7156,7 +7121,7 @@ mod tests {
         #[rstest]
         fn test_charge_from_heat_source_fully_charged(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             battery_control_off: Arc<ChargeControl>,
         ) {
             // charge_from_heat_source() returns 0 when battery is already fully charged.
@@ -7170,7 +7135,7 @@ mod tests {
             let zones_before = battery.read().zone_temp_c_dist_initial.read().clone();
             let (energy, zones_after) = battery
                 .read()
-                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .charge_from_heat_source(&source, 1.0, 1.0, timestep)
                 .unwrap();
 
             assert_relative_eq!(energy, 0.0, epsilon = 1e-7);
@@ -7238,7 +7203,7 @@ mod tests {
         #[rstest]
         fn test_switch_on_activates_when_soc_below_lower(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Charging activates when SOC <= lower setpoint (active period).
             let (battery, source) = make_test_electric_battery_with_setpoints(
@@ -7251,7 +7216,7 @@ mod tests {
             // The battery at temp_init=10°C has SOC=0.0, below the lower setpoint of 0.5.
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
@@ -7260,7 +7225,7 @@ mod tests {
         #[rstest]
         fn test_switch_on_does_not_activate_when_soc_above_lower(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Charging does not activate when SOC > lower setpoint.
             let (battery, source) = make_test_electric_battery_with_setpoints(
@@ -7273,7 +7238,7 @@ mod tests {
             // At 80°C the battery has SOC=1.0, above the lower setpoint of 0.5.
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(
@@ -7285,7 +7250,7 @@ mod tests {
         #[rstest]
         fn test_switch_on_off_period_does_not_activate(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Off period (both setpoints None) does not activate charging.
             let (battery, source) =
@@ -7293,7 +7258,7 @@ mod tests {
 
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(
@@ -7305,7 +7270,7 @@ mod tests {
         #[rstest]
         fn test_switch_on_transition_period_preserves_existing_state(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Transition period (lower=None, upper=non-None) preserves existing state.
             let (battery, source) =
@@ -7319,7 +7284,7 @@ mod tests {
 
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
             // Should remain True — transition period doesn't change state
             assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
@@ -7328,7 +7293,7 @@ mod tests {
         #[rstest]
         fn test_switch_off_deactivates_when_soc_above_upper(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Charging deactivates when SOC >= upper setpoint.
             // SOC=1.0 at 80°C, above upper=0.8.
@@ -7346,7 +7311,7 @@ mod tests {
 
             battery
                 .read()
-                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_off("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(
@@ -7358,7 +7323,7 @@ mod tests {
         #[rstest]
         fn test_switch_off_keeps_active_when_soc_below_upper(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Charging stays active when SOC < upper setpoint.
             // SOC=0.0 at 10°C, below upper=0.8
@@ -7376,7 +7341,7 @@ mod tests {
 
             battery
                 .read()
-                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_off("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
@@ -7385,7 +7350,7 @@ mod tests {
         #[rstest]
         fn test_switch_off_deactivates_during_off_period(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // Off period (upper=None) deactivates charging.
             let (battery, source) =
@@ -7398,7 +7363,7 @@ mod tests {
 
             battery
                 .read()
-                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_off("el", &source, timestep)
                 .unwrap();
 
             assert_eq!(
@@ -7410,7 +7375,7 @@ mod tests {
         #[rstest]
         fn test_timestep_end_dispatches_electric_charging(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // timestep_end() dispatches electric charging when the source is active.
             //
@@ -7422,10 +7387,7 @@ mod tests {
                 Some(0.9),
                 10.0,
             );
-            battery
-                .read()
-                .timestep_end(simulation_time_iteration)
-                .unwrap();
+            battery.read().timestep_end(timestep).unwrap();
 
             let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
             let expected_zones = [
@@ -7447,7 +7409,7 @@ mod tests {
         #[rstest]
         fn test_timestep_end_no_charging_when_soc_above_upper(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // timestep_end() does not charge when SOC is already above upper setpoint.
             //
@@ -7459,10 +7421,7 @@ mod tests {
                 Some(0.8),
                 80.0,
             );
-            battery
-                .read()
-                .timestep_end(simulation_time_iteration)
-                .unwrap();
+            battery.read().timestep_end(timestep).unwrap();
 
             let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
             // All zones are uniformly affected by losses only.
@@ -7476,7 +7435,7 @@ mod tests {
         #[rstest]
         fn test_timestep_end_hydronic_charges_with_heat_source_service(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             battery_control_off: Arc<ChargeControl>,
         ) {
             // timestep_end() dispatches to hydronic charging when a heat source service is set.
@@ -7527,10 +7486,7 @@ mod tests {
             sources.insert("hp".into(), source.into());
             let battery = make_battery(simulation_time, sources, 10.0);
 
-            battery
-                .read()
-                .timestep_end(simulation_time_iteration)
-                .unwrap();
+            battery.read().timestep_end(timestep).unwrap();
 
             let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
             // Charged towards the 58.887°C target charge temperature, with the
@@ -7748,7 +7704,7 @@ mod tests {
             #[rstest]
             fn test_resolve_setpoints_converts_temperature_to_soc(
                 simulation_time: SimulationTime,
-                simulation_time_iteration: SimulationTimeIteration,
+                timestep: Timestep,
             ) {
                 // resolve_setpoints converts temperature setpoints to SOC.
                 let source = Arc::new(make_direct_electric_source(
@@ -7761,10 +7717,7 @@ mod tests {
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 10.0);
-                let (lower, upper) = battery
-                    .read()
-                    .resolve_setpoints(&source, &simulation_time_iteration)
-                    .unwrap();
+                let (lower, upper) = battery.read().resolve_setpoints(&source, timestep).unwrap();
                 // Both should be SOC values between 0 and 1
                 assert!(lower.unwrap() >= 0.0 && lower.unwrap() <= 1.0);
                 assert!(upper.unwrap() >= 0.0 && upper.unwrap() <= 1.0);
@@ -7776,7 +7729,7 @@ mod tests {
             #[rstest]
             fn test_resolve_setpoints_passthrough_for_soc_unit(
                 simulation_time: SimulationTime,
-                simulation_time_iteration: SimulationTimeIteration,
+                timestep: Timestep,
             ) {
                 // resolve_setpoints returns SOC values unchanged when schedule_unit="soc"
                 let source = Arc::new(make_direct_electric_source(
@@ -7789,10 +7742,7 @@ mod tests {
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 10.0);
-                let (lower, upper) = battery
-                    .read()
-                    .resolve_setpoints(&source, &simulation_time_iteration)
-                    .unwrap();
+                let (lower, upper) = battery.read().resolve_setpoints(&source, timestep).unwrap();
 
                 assert_relative_eq!(lower.unwrap(), 0.3, epsilon = 1e-10);
                 assert_relative_eq!(upper.unwrap(), 0.8, epsilon = 1e-10);
@@ -7801,7 +7751,7 @@ mod tests {
             #[rstest]
             fn test_switch_on_with_temperature_schedule(
                 simulation_time: SimulationTime,
-                simulation_time_iteration: SimulationTimeIteration,
+                timestep: Timestep,
             ) {
                 // Charging activates when battery temp is below the lower temperature setpoint.
                 //
@@ -7819,7 +7769,7 @@ mod tests {
                 let battery = make_battery(simulation_time, sources, 10.0);
                 battery
                     .read()
-                    .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                    .determine_heat_source_switch_on("el", &source, timestep)
                     .unwrap();
 
                 assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
@@ -7828,7 +7778,7 @@ mod tests {
             #[rstest]
             fn test_switch_off_with_temperature_schedule(
                 simulation_time: SimulationTime,
-                simulation_time_iteration: SimulationTimeIteration,
+                timestep: Timestep,
             ) {
                 // At 80°C (SOC=1), the 65°C upper threshold is below the battery's SOC.
                 let source = Arc::new(make_direct_electric_source(
@@ -7848,7 +7798,7 @@ mod tests {
                     .insert("el".into(), true);
                 battery
                     .read()
-                    .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                    .determine_heat_source_switch_off("el", &source, timestep)
                     .unwrap();
 
                 assert_eq!(
@@ -8078,7 +8028,7 @@ mod tests {
         #[rstest]
         fn test_no_pipework_returns_zero_losses(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // No pipework → zero losses and zero gains.
             let (battery, _) = make_test_electric_battery_with_setpoints(
@@ -8090,12 +8040,7 @@ mod tests {
             let (losses, gains) = battery
                 .read()
                 .pipework
-                .calculate_primary_pipework_losses(
-                    5.0,
-                    Some(65.0),
-                    Some(true),
-                    &simulation_time_iteration,
-                )
+                .calculate_primary_pipework_losses(5.0, Some(65.0), Some(true), timestep)
                 .unwrap();
 
             assert_eq!(losses, 0.0);
@@ -8108,7 +8053,7 @@ mod tests {
         #[rstest]
         fn test_end_of_event_records_surrounding_temp(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             internal_pipework: Pipework,
         ) {
             // End of heating event records surrounding temps and reports cool-down gains.
@@ -8133,24 +8078,14 @@ mod tests {
             battery
                 .read()
                 .pipework
-                .calculate_primary_pipework_losses(
-                    5.0,
-                    Some(65.0),
-                    Some(true),
-                    &simulation_time_iteration,
-                )
+                .calculate_primary_pipework_losses(5.0, Some(65.0), Some(true), timestep)
                 .unwrap();
 
             // Timestep 2: heating stops (end of event)
             let (losses, _) = battery
                 .read()
                 .pipework
-                .calculate_primary_pipework_losses(
-                    0.0,
-                    Some(65.0),
-                    Some(true),
-                    &simulation_time_iteration,
-                )
+                .calculate_primary_pipework_losses(0.0, Some(65.0), Some(true), timestep)
                 .unwrap();
 
             // Python mocks the gains so assertions have been skipped. Only an assertion for losses is made.
@@ -8161,7 +8096,7 @@ mod tests {
         #[rstest]
         fn test_external_pipework_no_gains(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
             external_pipework: Pipework,
         ) {
             // External pipework losses do not contribute to internal gains.
@@ -8182,12 +8117,7 @@ mod tests {
             let (_, gains) = battery
                 .read()
                 .pipework
-                .calculate_primary_pipework_losses(
-                    5.0,
-                    Some(65.0),
-                    Some(true),
-                    &simulation_time_iteration,
-                )
+                .calculate_primary_pipework_losses(5.0, Some(65.0), Some(true), timestep)
                 .unwrap();
 
             // Python mocks the returns so assertions for losses here are skipped.
@@ -8206,26 +8136,21 @@ mod tests {
         #[rstest]
         fn test_lower_nonnull_upper_null_raises_valueerror(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             // schedule_lower=0.3 with schedule_upper=None raises ValueError.
             // Invalid: lower set but upper null
             let (battery, source) =
                 make_test_electric_battery_with_setpoints(simulation_time, Some(0.3), None, 10.0);
 
-            let result = battery.read().determine_heat_source_switch_on(
-                "el",
-                &source,
-                &simulation_time_iteration,
-            );
+            let result = battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, timestep);
             assert!(result.is_err());
         }
 
         #[rstest]
-        fn test_both_null_does_not_raise(
-            simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
-        ) {
+        fn test_both_null_does_not_raise(simulation_time: SimulationTime, timestep: Timestep) {
             //Both setpoints null (off period) does not raise — valid combination.
             let (battery, source) =
                 make_test_electric_battery_with_setpoints(simulation_time, None, None, 10.0);
@@ -8233,14 +8158,14 @@ mod tests {
             // Should not raise
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
         }
 
         #[rstest]
         fn test_lower_null_upper_nonnull_does_not_raise(
             simulation_time: SimulationTime,
-            simulation_time_iteration: SimulationTimeIteration,
+            timestep: Timestep,
         ) {
             //  Transition period (lower=None, upper=non-null) does not raise.
             let (battery, source) =
@@ -8248,7 +8173,7 @@ mod tests {
             // Should not raise
             battery
                 .read()
-                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .determine_heat_source_switch_on("el", &source, timestep)
                 .unwrap();
         }
     }

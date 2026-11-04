@@ -1,4 +1,4 @@
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
@@ -39,7 +39,7 @@ impl Bath {
         &'a self,
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let peak_flowrate = self.flowrate;
 

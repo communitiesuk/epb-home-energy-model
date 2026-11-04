@@ -1,5 +1,5 @@
 use crate::core::material_properties::WATER;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::dhw_demand::OutletType;
 use anyhow::bail;
 use approx::relative_eq;
@@ -158,13 +158,13 @@ pub fn water_demand_to_kwh(
 /// * `Err(anyhow::Error)` - If an error occurs during the calculation.
 pub(crate) fn volume_hot_water_required<
     T: Fn(f64) -> anyhow::Result<f64>,
-    U: Fn(f64, SimulationTimeIteration) -> anyhow::Result<Vec<(f64, f64)>>,
+    U: Fn(f64, Timestep) -> anyhow::Result<Vec<(f64, f64)>>,
 >(
     volume_warm_water: f64,
     temperature_target: f64,
     func_temperature_hot_water: T,
     func_temperature_cold_water: U,
-    simtime: SimulationTimeIteration,
+    simtime: Timestep,
 ) -> anyhow::Result<Option<f64>> {
     let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5)?;
     let mut list_temperature_volume =

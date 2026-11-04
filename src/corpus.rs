@@ -55,7 +55,7 @@ use crate::core::schedule::{
     ScheduleEvent, TypedScheduleEvent,
 };
 use crate::core::simulation_time::{SimulationTime, HOURS_IN_DAY};
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep};
 use crate::core::space_heat_demand::building_element::{
     calculate_cavity_resistance, convert_uvalue_to_resistance, BuildingElement,
     BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
@@ -1733,8 +1733,8 @@ impl Corpus {
     }
 
     /// Calculate the losses/gains in the MVHR ductwork, in Watts
-    fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
-        let temp_outdoor_air = self.external_conditions.air_temp(&simulation_time);
+    fn calc_internal_gains_ductwork(&self, simulation_time: Timestep) -> f64 {
+        let temp_outdoor_air = self.external_conditions.air_temp(simulation_time);
         let temp_indoor_air = self.temp_internal_air_prev_timestep();
 
         self.ventilation
@@ -1749,7 +1749,7 @@ impl Corpus {
         internal_gains_ductwork_per_m3: f64,
         gains_internal_buffer_tank: f64,
         gains_internal_boilers: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         // Initialise to dhw internal gains split proportionally to zone floor area
         let mut gains_internal_zone = (gains_internal_buffer_tank
@@ -1771,7 +1771,7 @@ impl Corpus {
         let mech_vents = self.ventilation.mech_vents();
         for mech_vent in mech_vents.iter() {
             gains_internal_zone +=
-                mech_vent.fans(zone.volume(), self.total_volume, None, &simtime)?;
+                mech_vent.fans(zone.volume(), self.total_volume, None, simtime)?;
         }
 
         Ok(gains_internal_zone)
@@ -1781,7 +1781,7 @@ impl Corpus {
     fn heat_cool_systems_for_zone(
         &self,
         z_name: &str,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<HeatCoolSystemsForZone> {
         let SetpointsAndConvectiveFractions {
             temp_setpnt_heat: temp_setpnt_heat_system,
@@ -1825,7 +1825,7 @@ impl Corpus {
         &self,
         h_name_list: &[ArcStr],
         c_name_list: &[ArcStr],
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<SetpointsAndConvectiveFractions> {
         let mut frac_convective_heat: IndexMap<ArcStr, f64> = Default::default();
         let mut frac_convective_cool: IndexMap<ArcStr, f64> = Default::default();
@@ -1865,7 +1865,7 @@ impl Corpus {
                     temp_setpnt_cool.insert(
                         c_name.clone(),
                         space_cool_system
-                            .temp_setpnt(&simtime)
+                            .temp_setpnt(simtime)
                             .unwrap_or_else(temp_setpnt_cool_none),
                     );
                 }
@@ -1910,7 +1910,7 @@ impl Corpus {
         initial_p_z_ref_guess: f64,
         reporting_flag: ReportingFlag,
         internal_pressure_window: &mut IndexMap<ReportingFlag, f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let current_internal_pressure_window = if self.initial_loop.load(Ordering::SeqCst) {
             self.ventilation.calculate_internal_reference_pressure(
@@ -1962,7 +1962,7 @@ impl Corpus {
         frac_convective_heat_zone_system: &IndexMap<ArcStr, IndexMap<ArcStr, f64>>,
         frac_convective_cool_zone_system: &IndexMap<ArcStr, IndexMap<ArcStr, f64>>,
         z_name: &str,
-        simulation_time_iteration: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<HeatCoolOutputs> {
         let h_output_min: IndexMap<ArcStr, f64> = h_name_list_sorted_zone[z_name]
             .iter()
@@ -1974,7 +1974,7 @@ impl Corpus {
                         .get(h_name)
                         .unwrap()
                         .lock()
-                        .energy_output_min(simulation_time_iteration)?,
+                        .energy_output_min(timestep)?,
                 ))
             })
             .try_collect()?;
@@ -2039,13 +2039,13 @@ impl Corpus {
         gains_internal_dhw_on_site_generation: f64,
         gains_internal_hb: f64,
         internal_pressure_window: &mut IndexMap<ReportingFlag, f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<SpaceHeatingCalculation> {
-        let wind_speed = self.external_conditions.wind_speed(&simtime);
+        let wind_speed = self.external_conditions.wind_speed(simtime);
         let wind_direction = self.external_conditions.wind_direction(simtime);
-        let temp_ext_air = self.external_conditions.air_temp(&simtime);
+        let temp_ext_air = self.external_conditions.air_temp(simtime);
         let temp_int_air = self.temp_internal_air_prev_timestep();
-        let (ach_min, ach_max) = self.vent_adjust_control.setpnt(&simtime);
+        let (ach_min, ach_max) = self.vent_adjust_control.setpnt(simtime);
         // Calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
 
@@ -2139,7 +2139,7 @@ impl Corpus {
         let mut heat_balance_map: IndexMap<ArcStr, Option<HeatBalance>> = Default::default();
 
         // Average supply temperature
-        let avg_air_supply_temp = self.external_conditions.air_temp(&simtime);
+        let avg_air_supply_temp = self.external_conditions.air_temp(simtime);
 
         for (z_name, zone) in self.zones.iter() {
             // Calculate internal and solar gains
@@ -2638,7 +2638,7 @@ impl Corpus {
         &self,
         hc_name_list_sorted: &[ArcStr],
         space_heat_cool_systems: SpaceHeatCoolSystems,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Option<ArcStr>> {
         let mut hc_name_highest_req = Default::default();
         for hc_name in hc_name_list_sorted {
@@ -2695,7 +2695,7 @@ impl Corpus {
         ach_max: f64,
         ach_target: f64,
         avg_air_supply_temp: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<()> {
         // Determine highest-priority system that is in its required heating
         // or cooling period (and not just the setback period)
@@ -2927,7 +2927,7 @@ impl Corpus {
             } = self.domestic_hot_water_demand.calc_water_heating(
                 t_it,
                 self.temp_internal_air_prev_timestep(),
-                self.external_conditions.air_temp(&t_it),
+                self.external_conditions.air_temp(t_it),
             )?;
 
             let mut gains_internal_dhw_on_site_generation =
@@ -2938,7 +2938,7 @@ impl Corpus {
             for heat_source_wet in self.heat_sources_wet.values() {
                 if let WetHeatSource::HeatBattery(battery) = heat_source_wet {
                     gains_internal_hb +=
-                        battery.get_battery_losses() * WATTS_PER_KILOWATT as f64 / t_it.timestep
+                        battery.get_battery_losses() * WATTS_PER_KILOWATT as f64 / t_it.step
                 }
             }
 
@@ -2949,7 +2949,7 @@ impl Corpus {
                 // Add the energy lost figure to the internal gains if it is considered inside the building
                 if pv.inverter_is_inside() {
                     gains_internal_dhw_on_site_generation +=
-                        energy_lost * WATTS_PER_KILOWATT as f64 / t_it.timestep;
+                        energy_lost * WATTS_PER_KILOWATT as f64 / t_it.step;
                 }
             }
 
@@ -3864,16 +3864,12 @@ enum SpaceHeatCoolSystems<'a> {
 }
 
 impl SpaceHeatCoolSystems<'_> {
-    fn in_required_period_for_name(
-        &self,
-        system_name: &str,
-        simtime: SimulationTimeIteration,
-    ) -> Option<bool> {
+    fn in_required_period_for_name(&self, system_name: &str, simtime: Timestep) -> Option<bool> {
         match self {
             SpaceHeatCoolSystems::Heat(heat) => {
                 heat[system_name].lock().in_required_period(simtime)
             }
-            SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
+            SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(simtime),
         }
     }
 }
@@ -4576,7 +4572,7 @@ fn zone_from_input(
             .collect::<anyhow::Result<IndexMap<ArcStr, Arc<BuildingElement>>>>()?,
         thermal_bridging_from_input(&input.thermal_bridging),
         infiltration_ventilation,
-        external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
+        external_conditions.air_temp(simulation_time_iterator.current_iteration()),
         input.temp_setpnt_init,
         Some(temp_setpnt_basis),
         window_adjust_control,
@@ -4663,15 +4659,15 @@ enum VentAdjustControl {
 }
 
 impl VentAdjustControl {
-    fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+    fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
         match self {
-            Self::Unified(control) => control.setpnt(simtime),
+            Self::Unified(control) => control.setpnt(timestep),
             Self::MinMax {
                 control_min,
                 control_max,
             } => (
-                control_min.as_ref().and_then(|c| c.setpnt(simtime)),
-                control_max.as_ref().and_then(|c| c.setpnt(simtime)),
+                control_min.as_ref().and_then(|c| c.setpnt(timestep)),
+                control_max.as_ref().and_then(|c| c.setpnt(timestep)),
             ),
         }
     }
@@ -5048,14 +5044,11 @@ pub(crate) enum HeatSource {
 }
 
 impl HeatSource {
-    pub(crate) fn setpnt(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+    pub(crate) fn setpnt(&self, simtime: Timestep) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         match self {
             HeatSource::Storage(ref storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().setpnt(simtime)),
-                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(&simtime)),
+                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(simtime)),
             },
             HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
@@ -5093,7 +5086,7 @@ impl HeatBattery {
         }
     }
 
-    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&self, simtime: Timestep) -> anyhow::Result<()> {
         match self {
             HeatBattery::DryCore(heat_battery) => heat_battery.timestep_end(simtime)?,
             HeatBattery::Pcm(heat_battery) => heat_battery.read().timestep_end(simtime)?,
@@ -5129,7 +5122,7 @@ impl HeatBattery {
 }
 
 impl WetHeatSource {
-    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&self, simtime: Timestep) -> anyhow::Result<()> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index)?,
             WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime)?,
@@ -5221,7 +5214,7 @@ pub(crate) enum HeatSystem {
 }
 
 impl HeatSystem {
-    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&self, simtime: Timestep) -> anyhow::Result<()> {
         match self {
             HeatSystem::WetSystem(wet_heat_source) => wet_heat_source.timestep_end(simtime),
             HeatSystem::WwhrsSystem(wwhrs) => {
@@ -6188,13 +6181,13 @@ pub trait HotWaterSourceBehaviour: std::fmt::Debug {
     fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64>;
     fn get_temp_hot_water(
         &self,
         volume_required: f64,
         volume_required_already: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>>;
     fn internal_gains(&self) -> Option<f64> {
         None
@@ -6223,7 +6216,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
     fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => {
@@ -6233,7 +6226,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                 .write()
                 .demand_hot_water(usage_events, simtime)?,
             HotWaterSource::PointOfUse(point_of_use) => {
-                point_of_use.demand_hot_water(usage_events, &simtime)?
+                point_of_use.demand_hot_water(usage_events, simtime)?
             }
             HotWaterSource::HeatNetwork(heat_network_service_water_direct) => {
                 heat_network_service_water_direct.demand_hot_water(usage_events, simtime)?
@@ -6250,7 +6243,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
         &self,
         volume_required: f64,
         volume_required_already: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => hot_water_storage_tank
@@ -6334,7 +6327,7 @@ impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {
     fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             HeatBatteryHotWaterSource::Pcm(pcm) => {
@@ -6350,7 +6343,7 @@ impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {
         &self,
         volume_required: f64,
         volume_required_already: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
             HeatBatteryHotWaterSource::Pcm(pcm) => {
@@ -6574,7 +6567,7 @@ fn hot_water_source_from_input(
                 details.daily_losses,
                 details.init_temp,
                 cold_water_source,
-                &simulation_time.current_iteration(),
+                simulation_time.current_iteration(),
                 heat_sources.clone(),
                 temp_internal_air_fn,
                 external_conditions,

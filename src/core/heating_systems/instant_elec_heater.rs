@@ -3,7 +3,7 @@
 use crate::core::controls::time_control::SetpointOrCombinationControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::constants::MAX_TEMPERATURE_TOUCHABLE;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::solvers::root;
 use crate::core::solvers::solve_ivp::{solve_ivp, OdeResult, TerminatingEvent};
 use crate::corpus::TempInternalAirFn;
@@ -110,14 +110,14 @@ impl InstantElecHeater {
         })
     }
 
-    pub fn temp_setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
-        self.control.as_ref().and_then(|ctrl| ctrl.setpnt(simtime))
+    pub fn temp_setpnt(&self, timestep: Timestep) -> Option<f64> {
+        self.control.as_ref().and_then(|ctrl| ctrl.setpnt(timestep))
     }
 
-    pub fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
+    pub fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
         self.control
             .as_ref()
-            .and_then(|ctrl| ctrl.in_required_period(simtime))
+            .and_then(|ctrl| ctrl.in_required_period(timestep))
     }
 
     pub fn frac_convective(&self) -> f64 {
@@ -152,11 +152,7 @@ impl InstantElecHeater {
     }
 
     /// Demand energy (in kWh) from the heater
-    pub fn demand_energy(
-        &self,
-        energy_demand: f64,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    pub fn demand_energy(&self, energy_demand: f64, simtime: Timestep) -> anyhow::Result<f64> {
         let (thermal_mass, thermal_mass_fields) =
             if let Some(thermal_mass_fields) = self.thermal_mass {
                 (thermal_mass_fields.thermal_mass, thermal_mass_fields)
@@ -310,9 +306,9 @@ impl InstantElecHeater {
     fn demand_energy_no_thermal_mass(
         &self,
         energy_demand: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
-        let energy_supplied = if self.control.as_ref().is_none_or(|c| c.is_on(&simtime)) {
+        let energy_supplied = if self.control.as_ref().is_none_or(|c| c.is_on(simtime)) {
             energy_demand.min(self.rated_power_in_kw * self.simulation_timestep)
         } else {
             0.0
@@ -1187,7 +1183,7 @@ mod tests {
         let setpoint_expected = [Some(21.0), Some(21.0), None, Some(21.0)];
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                instant_elec_heater.temp_setpnt(&t_it),
+                instant_elec_heater.temp_setpnt(t_it),
                 setpoint_expected[t_idx]
             );
         }
@@ -1201,7 +1197,7 @@ mod tests {
         let expected_whether = [true, true, false, true];
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                instant_elec_heater.in_required_period(&t_it),
+                instant_elec_heater.in_required_period(t_it),
                 Some(expected_whether[t_idx])
             );
         }

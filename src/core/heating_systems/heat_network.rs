@@ -3,7 +3,7 @@ use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{CompositeRangeTimeControl, ControlSetPoint};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use anyhow::bail;
@@ -63,7 +63,7 @@ impl HeatNetworkServiceWaterDirect {
     pub(crate) fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.;
 
@@ -126,11 +126,8 @@ impl HeatNetworkServiceWaterStorage {
     }
 
     /// Return setpoint (not necessarily temperature)
-    pub(crate) fn setpnt(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt(&simulation_time_iteration)
+    pub(crate) fn setpnt(&self, timestep: Timestep) -> (Option<f64>, Option<f64>) {
+        self.control.setpnt(timestep)
     }
 
     /// Demand energy (in kWh) from the heat network
@@ -147,11 +144,11 @@ impl HeatNetworkServiceWaterStorage {
         _temp_flow: f64,
         _temp_return: Option<f64>,
         ignore_standard_ctrl: Option<bool>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
 
-        if !self.is_on(simulation_time_iteration) && !ignore_standard_ctrl {
+        if !self.is_on(timestep) && !ignore_standard_ctrl {
             return Ok(0.);
         }
 
@@ -162,7 +159,7 @@ impl HeatNetworkServiceWaterStorage {
             energy_demand,
             None,
             None,
-            simulation_time_iteration.index,
+            timestep.index,
         )
     }
 
@@ -178,18 +175,18 @@ impl HeatNetworkServiceWaterStorage {
         _temp_flow: f64,
         _temp_return: f64,
         ignore_standard_ctrl: Option<bool>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
-        if !self.is_on(simulation_time_iteration) && !ignore_standard_ctrl {
+        if !self.is_on(timestep) && !ignore_standard_ctrl {
             return 0.;
         }
 
         self.heat_network.lock().energy_output_max(None)
     }
 
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.control.is_on(simulation_time_iteration)
+    fn is_on(&self, timestep: Timestep) -> bool {
+        self.control.is_on(timestep)
     }
 }
 
@@ -220,12 +217,12 @@ impl HeatNetworkServiceSpace {
         _temp_return: f64,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
-        if !self.is_on(simulation_time_iteration) {
+        if !self.is_on(timestep) {
             return Ok(0.);
         }
 
@@ -235,7 +232,7 @@ impl HeatNetworkServiceSpace {
             energy_demand,
             Some(time_start),
             Some(update_heat_source_state),
-            simulation_time_iteration.index,
+            timestep.index,
         )
     }
 
@@ -244,33 +241,27 @@ impl HeatNetworkServiceSpace {
         _temp_output: f64,
         _temp_return_feed: f64,
         time_start: Option<f64>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
         let time_start = time_start.unwrap_or(0.);
 
-        if !self.is_on(simulation_time_iteration) {
+        if !self.is_on(timestep) {
             return 0.;
         }
 
         self.heat_network.lock().energy_output_max(Some(time_start))
     }
 
-    pub fn temperature_setpnt(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<f64> {
-        self.control.setpnt(simulation_time_iteration)
+    pub fn temperature_setpnt(&self, timestep: Timestep) -> Option<f64> {
+        self.control.setpnt(timestep)
     }
 
-    pub fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        self.control.in_required_period(simulation_time_iteration)
+    pub fn in_required_period(&self, timestep: Timestep) -> Option<bool> {
+        self.control.in_required_period(timestep)
     }
 
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.control.is_on(simulation_time_iteration)
+    fn is_on(&self, timestep: Timestep) -> bool {
+        self.control.is_on(timestep)
     }
 }
 
@@ -567,7 +558,7 @@ mod tests {
             SERVICE_NAME.into(),
             control.clone().into(),
         );
-        assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
+        assert!(heat_network_service.is_on(two_len_simulation_time.iter().next().unwrap()));
 
         let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network,
@@ -575,7 +566,7 @@ mod tests {
             control.into(),
         );
         assert!(
-            heat_network_service_no_control.is_on(&two_len_simulation_time.iter().next().unwrap())
+            heat_network_service_no_control.is_on(two_len_simulation_time.iter().next().unwrap())
         );
     }
 
@@ -830,7 +821,7 @@ mod tests {
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
                 heat_network_service_water_storage
-                    .demand_energy(energy_demanded[t_idx], 60., Some(60.), None, &t_it)
+                    .demand_energy(energy_demanded[t_idx], 60., Some(60.), None, t_it)
                     .unwrap(),
                 [7.0, 2.0][t_idx]
             );
@@ -856,7 +847,7 @@ mod tests {
                     temp_flow[t_idx],
                     temp_return[t_idx],
                     None,
-                    &t_it
+                    t_it
                 ),
                 [7.0, 7.0][t_idx]
             );
@@ -872,20 +863,11 @@ mod tests {
     fn test_energy_output_max_matches_demand_energy_ceiling(
         heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
     ) {
-        let simulation_time_iteration = &SimulationTime::new(0., 2., 1.).iter().next().unwrap();
-        let energy_max = heat_network_service_water_storage.energy_output_max(
-            15.,
-            10.,
-            None,
-            simulation_time_iteration,
-        );
-        let energy_delivered = heat_network_service_water_storage.demand_energy(
-            1.0e6,
-            0.,
-            None,
-            None,
-            simulation_time_iteration,
-        );
+        let timestep = SimulationTime::new(0., 2., 1.).iter().next().unwrap();
+        let energy_max =
+            heat_network_service_water_storage.energy_output_max(15., 10., None, timestep);
+        let energy_delivered =
+            heat_network_service_water_storage.demand_energy(1.0e6, 0., None, None, timestep);
 
         assert_relative_eq!(energy_max, 7.0); // power_max 7 kW over the 1 h timestep
         assert_relative_eq!(energy_max, energy_delivered.unwrap());
@@ -922,7 +904,7 @@ mod tests {
                     0., // Python passes None here but the parameter is unused
                     None,
                     None,
-                    &two_len_simulation_time.iter().current_iteration()
+                    two_len_simulation_time.iter().current_iteration()
                 )
                 .unwrap(),
             0.
@@ -960,7 +942,7 @@ mod tests {
                 10.,
                 10.,
                 None,
-                &two_len_simulation_time.iter().current_iteration()
+                two_len_simulation_time.iter().current_iteration()
             ),
             0.
         );
@@ -1005,7 +987,7 @@ mod tests {
                 15.,
                 10.,
                 Some(true),
-                &two_len_simulation_time.iter().current_iteration()
+                two_len_simulation_time.iter().current_iteration()
             ),
             7.
         );
@@ -1017,7 +999,7 @@ mod tests {
                     15.,
                     Some(10.),
                     Some(true),
-                    &two_len_simulation_time.iter().current_iteration()
+                    two_len_simulation_time.iter().current_iteration()
                 )
                 .unwrap(),
             7.
@@ -1096,7 +1078,7 @@ mod tests {
                         temp_return[t_idx],
                         None,
                         None,
-                        &t_it
+                        t_it
                     )
                     .unwrap(),
                 [5.0, 0.0, 0.0][t_idx]
@@ -1119,7 +1101,7 @@ mod tests {
                     temp_output[t_idx],
                     temp_return_feed[t_idx],
                     None,
-                    &t_it
+                    t_it
                 ),
                 [5.0, 5.0, 0.0][t_idx]
             );
@@ -1134,7 +1116,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in three_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network_service_space.temperature_setpnt(&t_it),
+                heat_network_service_space.temperature_setpnt(t_it),
                 [Some(21.), Some(21.), None][t_idx]
             );
         }
@@ -1147,7 +1129,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in three_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network_service_space.in_required_period(&t_it),
+                heat_network_service_space.in_required_period(t_it),
                 [Some(true), Some(true), Some(false)][t_idx]
             );
         }

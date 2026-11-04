@@ -1,7 +1,7 @@
 use crate::core::controls::time_control::SetpointOrCombinationControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::corpus::TempInternalAirFn;
 use anyhow::bail;
 use delegate::delegate;
@@ -85,9 +85,9 @@ impl DryElectricUnderfloorHeating {
 
     delegate! {
         to self.electric_heater {
-            pub fn demand_energy(&self, energy_demand: f64, simtime: SimulationTimeIteration) -> anyhow::Result<f64>;
-            pub fn temp_setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64>;
-            pub fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+            pub fn demand_energy(&self, energy_demand: f64, simtime: Timestep) -> anyhow::Result<f64>;
+            pub fn temp_setpnt(&self, timestep: Timestep) -> Option<f64>;
+            pub fn in_required_period(&self, timestep: Timestep) -> Option<bool>;
             pub fn frac_convective(&self) -> f64;
             pub fn energy_output_min(&self) -> anyhow::Result<f64>;
         }
@@ -390,7 +390,7 @@ mod tests {
     fn test_temp_setpnt(heater: DryElectricUnderfloorHeating, simulation_time: SimulationTime) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                heater.temp_setpnt(&t_it),
+                heater.temp_setpnt(t_it),
                 [21.0.into(), 21.0.into(), None, 21.0.into()][t_idx]
             );
         }
@@ -403,7 +403,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                heater.in_required_period(&t_it),
+                heater.in_required_period(t_it),
                 [true, true, false, true][t_idx].into()
             );
         }

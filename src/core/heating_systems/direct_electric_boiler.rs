@@ -9,7 +9,7 @@ use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
     CombiBoilerConfig, IncorrectBoilerDataType, ServiceResult, ServiceType,
 };
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -322,11 +322,10 @@ impl DirectElectricBoiler {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub(crate) fn timestep_end(&mut self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    pub(crate) fn timestep_end(&mut self, simtime: Timestep) -> anyhow::Result<()> {
         self.electrical_energy_demand(simtime.index)?;
 
-        let time_remaining_current_step =
-            simtime.timestep - self.total_time_running_current_timestep;
+        let time_remaining_current_step = simtime.step - self.total_time_running_current_timestep;
 
         self.calc_auxiliary_energy(simtime.index, time_remaining_current_step)?;
 

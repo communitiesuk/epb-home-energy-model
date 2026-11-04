@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep, HOURS_IN_DAY};
 use crate::core::units::{Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY};
 use crate::input::ExternalConditionsInput;
 use anyhow::{anyhow, bail};
@@ -355,17 +355,13 @@ impl ExternalConditions {
         }
     }
 
-    pub(crate) fn air_temp(&self, simtime: &SimulationTimeIteration) -> f64 {
-        self.air_temp_with_offset(simtime, 0)
+    pub(crate) fn air_temp(&self, timestep: Timestep) -> f64 {
+        self.air_temp_with_offset(timestep, 0)
     }
 
     // This method represents using the Python air_temp method with an offset parameter provided.
-    pub(crate) fn air_temp_with_offset(
-        &self,
-        simtime: &SimulationTimeIteration,
-        offset: usize,
-    ) -> f64 {
-        let mut idx = simtime.time_series_idx(self.start_day, self.time_series_step) + offset;
+    pub(crate) fn air_temp_with_offset(&self, timestep: Timestep, offset: usize) -> f64 {
+        let mut idx = timestep.time_series_idx(self.start_day, self.time_series_step) + offset;
         if idx >= self.air_temps.len() {
             idx -= self.air_temps.len();
         }
@@ -426,9 +422,9 @@ impl ExternalConditions {
             .unwrap()
     }
 
-    pub fn wind_speed(&self, simulation_time: &SimulationTimeIteration) -> f64 {
+    pub fn wind_speed(&self, timestep: Timestep) -> f64 {
         self.wind_speed_for_timestep_idx(
-            simulation_time.time_series_idx(self.start_day, self.time_series_step),
+            timestep.time_series_idx(self.start_day, self.time_series_step),
         )
     }
 
@@ -448,7 +444,7 @@ impl ExternalConditions {
         Ok(sum / self.wind_speeds.len() as f64)
     }
 
-    pub fn wind_direction(&self, simulation_time: SimulationTimeIteration) -> Orientation360 {
+    pub fn wind_direction(&self, simulation_time: Timestep) -> Orientation360 {
         self.wind_directions[simulation_time.time_series_idx(self.start_day, self.time_series_step)]
     }
 
@@ -493,9 +489,9 @@ impl ExternalConditions {
         self.direct_beam_radiations[timestep_idx]
     }
 
-    pub fn solar_reflectivity_of_ground(&self, simulation_time: &SimulationTimeIteration) -> f64 {
+    pub fn solar_reflectivity_of_ground(&self, timestep: Timestep) -> f64 {
         self.solar_reflectivity_of_ground
-            [simulation_time.time_series_idx(self.start_day, self.time_series_step)]
+            [timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
 
     /// calculates the solar angle of incidence, which is the angle of incidence of the
@@ -515,16 +511,16 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
         //set up/ shadow some vars as radians for trig stuff
         let tilt = tilt.to_radians();
         let orientation_180 = orientation.transform_to_180().to_radians();
         let latitude = self.latitude.to_radians();
         let solar_declination: f64 =
-            self.solar_declinations[simulation_time.current_day() as usize].to_radians();
+            self.solar_declinations[timestep.current_day() as usize].to_radians();
         let solar_hour_angle: f64 =
-            self.solar_hour_angles[simulation_time.current_hour() as usize].to_radians();
+            self.solar_hour_angles[timestep.current_hour() as usize].to_radians();
 
         (solar_declination.sin() * latitude.sin() * tilt.cos()
             - solar_declination.sin() * latitude.cos() * tilt.sin() * orientation_180.cos()
@@ -550,11 +546,7 @@ impl ExternalConditions {
     ///                   It will be converted to the -180 to 180 range;
     ///                   Assumed N 180 or -180, E 90, S 0, W -90
     #[cfg(test)]
-    fn sun_surface_azimuth(
-        &self,
-        orientation: Orientation360,
-        simtime: SimulationTimeIteration,
-    ) -> f64 {
+    fn sun_surface_azimuth(&self, orientation: Orientation360, simtime: Timestep) -> f64 {
         let orientation_180 = orientation.transform_to_180();
         let current_hour = simtime.current_hour();
         let test_angle = self.solar_hour_angles[current_hour as usize] - orientation_180;
@@ -576,7 +568,7 @@ impl ExternalConditions {
     /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
     ///            upwards facing, 0 to 180, in degrees;
     #[cfg(test)]
-    fn sun_surface_tilt(&self, tilt: f64, simtime: SimulationTimeIteration) -> f64 {
+    fn sun_surface_tilt(&self, tilt: f64, simtime: Timestep) -> f64 {
         let current_hour = simtime.current_hour();
         let test_angle = tilt - self.solar_zenith_angles[current_hour as usize];
 
@@ -589,12 +581,7 @@ impl ExternalConditions {
         }
     }
 
-    fn direct_irradiance(
-        &self,
-        tilt: f64,
-        orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
-    ) -> f64 {
+    fn direct_irradiance(&self, tilt: f64, orientation: Orientation360, timestep: Timestep) -> f64 {
         // calculates the direct irradiance on the inclined surface, determined as function
         // of cosine of the solar angle of incidence and the direct normal (beam) solar irradiance
         // NOTE The solar beam irradiance is defined as falling on an surface normal to the solar beam.
@@ -606,9 +593,9 @@ impl ExternalConditions {
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the inclined
         //                   surface normal, 0 to 360, in degrees;
-        let direct_irradiance = self.direct_beam_radiation(simulation_time.index)
+        let direct_irradiance = self.direct_beam_radiation(timestep.index)
             * self
-                .solar_angle_of_incidence(tilt, orientation, simulation_time)
+                .solar_angle_of_incidence(tilt, orientation, timestep)
                 .to_radians()
                 .cos();
         if direct_irradiance < 0.0 {
@@ -618,12 +605,7 @@ impl ExternalConditions {
         }
     }
 
-    fn a_over_b(
-        &self,
-        tilt: f64,
-        orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
-    ) -> f64 {
+    fn a_over_b(&self, tilt: f64, orientation: Orientation360, timestep: Timestep) -> f64 {
         // calculates the ratio of the parameters a and b
         //
         // Arguments:
@@ -638,13 +620,13 @@ impl ExternalConditions {
         // #respectively by the tilted surface and the horizontal.
         let a = max_of_2(
             0.,
-            self.solar_angle_of_incidence(tilt, orientation, simulation_time)
+            self.solar_angle_of_incidence(tilt, orientation, timestep)
                 .to_radians()
                 .cos(),
         );
         let b = max_of_2(
             85.0f64.to_radians().cos(),
-            self.solar_zenith_angles[simulation_time.current_hour() as usize]
+            self.solar_zenith_angles[timestep.current_hour() as usize]
                 .to_radians()
                 .cos(),
         );
@@ -656,7 +638,7 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> DiffuseIrradiance {
         // calculates the diffuse part of the irradiance on the surface (without ground reflection)
         //
@@ -668,15 +650,14 @@ impl ExternalConditions {
         //                   surface normal, 0 to 360, in degrees;
 
         // #first set up parameters needed for the calculation
-        let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(simulation_time.index);
-        let f1 = self.f1_circumsolar_brightness_coefficients[simulation_time.index];
-        let f2 = self.f2_horizontal_brightness_coefficients[simulation_time.index];
+        let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(timestep.index);
+        let f1 = self.f1_circumsolar_brightness_coefficients[timestep.index];
+        let f2 = self.f2_horizontal_brightness_coefficients[timestep.index];
 
         // # Calculate components of diffuse radiation
         let diffuse_irr_sky =
             diffuse_horizontal_radiation * (1.0 - f1) * ((1.0 + tilt.to_radians().cos()) / 2.0);
-        let diffuse_irr_circumsolar =
-            self.circumsolar_irradiance(tilt, orientation, simulation_time);
+        let diffuse_irr_circumsolar = self.circumsolar_irradiance(tilt, orientation, timestep);
         let diffuse_irr_horiz = diffuse_horizontal_radiation * f2 * tilt.to_radians().sin();
 
         DiffuseIrradiance(
@@ -687,11 +668,7 @@ impl ExternalConditions {
         )
     }
 
-    fn ground_reflection_irradiance(
-        &self,
-        tilt: f64,
-        simulation_time: &SimulationTimeIteration,
-    ) -> f64 {
+    fn ground_reflection_irradiance(&self, tilt: f64, timestep: Timestep) -> f64 {
         // """  calculates the contribution of the ground reflection to the irradiance on the inclined surface,
         // determined as function of global horizontal irradiance, which in this case is calculated from the solar
         // altitude, diffuse and beam solar irradiance and the solar reflectivity of the ground
@@ -701,12 +678,12 @@ impl ExternalConditions {
         //                   upwards facing, 0 to 180, in degrees;
         // """
 
-        (self.diffuse_horizontal_radiation(simulation_time.index)
-            + self.direct_beam_radiation(simulation_time.index)
-                * self.solar_altitudes[simulation_time.current_hour() as usize]
+        (self.diffuse_horizontal_radiation(timestep.index)
+            + self.direct_beam_radiation(timestep.index)
+                * self.solar_altitudes[timestep.current_hour() as usize]
                     .to_radians()
                     .sin())
-            * self.solar_reflectivity_of_ground(simulation_time)
+            * self.solar_reflectivity_of_ground(timestep)
             * ((1.0 - tilt.to_radians().cos()) / 2.0)
     }
 
@@ -722,11 +699,11 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
-        self.diffuse_horizontal_radiation(simulation_time.index)
-            * self.f1_circumsolar_brightness_coefficients[simulation_time.index]
-            * self.a_over_b(tilt, orientation, simulation_time)
+        self.diffuse_horizontal_radiation(timestep.index)
+            * self.f1_circumsolar_brightness_coefficients[timestep.index]
+            * self.a_over_b(tilt, orientation, timestep)
     }
 
     /// calculates the total direct irradiance on an inclined surface including circumsolar
@@ -741,10 +718,10 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
-        self.direct_irradiance(tilt, orientation, simulation_time)
-            + self.circumsolar_irradiance(tilt, orientation, simulation_time)
+        self.direct_irradiance(tilt, orientation, timestep)
+            + self.circumsolar_irradiance(tilt, orientation, timestep)
     }
 
     /// calculates the total diffuse irradiance on an inclined surface excluding circumsolar
@@ -760,13 +737,13 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
         let DiffuseIrradiance(diffuse_irr_total, _, diffuse_irr_circumsolar, _) =
-            self.diffuse_irradiance(tilt, orientation, simulation_time);
+            self.diffuse_irradiance(tilt, orientation, timestep);
 
         diffuse_irr_total - diffuse_irr_circumsolar
-            + self.ground_reflection_irradiance(tilt, simulation_time)
+            + self.ground_reflection_irradiance(tilt, timestep)
     }
 
     // calculates the hemispherical or total solar irradiance on the inclined surface
@@ -782,10 +759,10 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
-        self.calculated_direct_irradiance(tilt, orientation, simulation_time)
-            + self.calculated_diffuse_irradiance(tilt, orientation, simulation_time)
+        self.calculated_direct_irradiance(tilt, orientation, timestep)
+            + self.calculated_diffuse_irradiance(tilt, orientation, timestep)
     }
 
     pub(crate) fn calculated_direct_diffuse_total_irradiance(
@@ -793,7 +770,7 @@ impl ExternalConditions {
         tilt: f64,
         orientation: Orientation360,
         diffuse_breakdown: bool,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> CalculatedDirectDiffuseTotalIrradiance {
         // NB. the original Python implementation uses an internal cache for each timestep here
         // it only retains one set of results at a time so it may be of limited use, and i've skipped reimplementing it
@@ -804,12 +781,12 @@ impl ExternalConditions {
             diffuse_irr_sky,
             diffuse_irr_circumsolar,
             diffuse_irr_horiz,
-        ) = self.diffuse_irradiance(tilt, orientation, simulation_time);
+        ) = self.diffuse_irradiance(tilt, orientation, timestep);
 
-        let ground_reflection_irradiance = self.ground_reflection_irradiance(tilt, simulation_time);
+        let ground_reflection_irradiance = self.ground_reflection_irradiance(tilt, timestep);
 
         let calculated_direct =
-            self.direct_irradiance(tilt, orientation, simulation_time) + diffuse_irr_circumsolar;
+            self.direct_irradiance(tilt, orientation, timestep) + diffuse_irr_circumsolar;
         let calculated_diffuse =
             diffuse_irr_total - diffuse_irr_circumsolar + ground_reflection_irradiance;
         let total_irradiance = calculated_direct + calculated_diffuse;
@@ -844,10 +821,10 @@ impl ExternalConditions {
         &self,
         tilt: f64,
         orientation: Orientation360,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> bool {
         let orientation180 = orientation.transform_to_180();
-        let current_hour_idx = simulation_time.current_hour() as usize;
+        let current_hour_idx = timestep.current_hour() as usize;
 
         let test1 = orientation180 - self.solar_azimuth_angles[current_hour_idx];
         let test1 = if test1 > 180. {
@@ -864,11 +841,8 @@ impl ExternalConditions {
 
     /// for complex (environment) shading objects, we need to know which
     /// segment the azimuth of the sun occupies at each timestep
-    fn get_segment(
-        &self,
-        simulation_time: &SimulationTimeIteration,
-    ) -> anyhow::Result<ShadingSegment> {
-        let current_hour_idx = simulation_time.current_hour() as usize;
+    fn get_segment(&self, timestep: Timestep) -> anyhow::Result<ShadingSegment> {
+        let current_hour_idx = timestep.current_hour() as usize;
         let azimuth = self.solar_azimuth_angles[current_hour_idx];
 
         let mut previous_segment_end: Option<Orientation360> = None;
@@ -902,7 +876,7 @@ impl ExternalConditions {
         base_height: f64,
         shading_obstacle_height: f64,
         surface_obstacle_distance: f64,
-        simulation_time: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
         // """ calculates the height of the shading on the shaded surface (k),
         // from the shading obstacle in segment i at time t. Note that "obstacle"
@@ -916,7 +890,7 @@ impl ExternalConditions {
         let hshade = shading_obstacle_height
             - base_height
             - surface_obstacle_distance
-                * self.solar_altitudes[simulation_time.current_hour() as usize]
+                * self.solar_altitudes[timestep.current_hour() as usize]
                     .to_radians()
                     .tan();
         if hshade < 0.0 {
@@ -942,9 +916,9 @@ impl ExternalConditions {
         base_height: f64,
         overhang_lowest_height: f64,
         surface_overhang_distance: f64,
-        simulation_time: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> f64 {
-        let current_hour = simulation_time.current_hour();
+        let current_hour = timestep.current_hour();
         0.0f64.max(
             shaded_surface_height + base_height - overhang_lowest_height
                 + surface_overhang_distance
@@ -982,7 +956,7 @@ impl ExternalConditions {
         tilt: f64,
         orientation: Orientation360,
         window_shading: Option<&[WindowShadingObject]>,
-        simulation_time: SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         // first check if the surface is outside the solar beam
         // if so then direct shading is complete and we don't need to
@@ -1001,7 +975,7 @@ impl ExternalConditions {
         //  significantly pitched would have to be relatively tall and/or
         //  very close to cast a shadow on the surface in question anyway),
         //  so that results in the unshaded case will be correct.
-        if self.outside_solar_beam(tilt, orientation, &simulation_time) {
+        if self.outside_solar_beam(tilt, orientation, timestep) {
             return Ok(1.0);
         }
 
@@ -1013,7 +987,7 @@ impl ExternalConditions {
         let mut wfinl = 0.0;
 
         // first process the distant (environment) shading for this building element
-        let segment = self.get_segment(&simulation_time)?;
+        let segment = self.get_segment(timestep)?;
 
         for shading_object in segment.shading_objects.iter() {
             match shading_object.object_type {
@@ -1022,7 +996,7 @@ impl ExternalConditions {
                         base_height,
                         shading_object.height,
                         shading_object.distance,
-                        &simulation_time,
+                        timestep,
                     );
                     hshade_obst = max_of_2(hshade_obst, new_shade_height);
                 }
@@ -1032,7 +1006,7 @@ impl ExternalConditions {
                         base_height,
                         shading_object.height,
                         shading_object.distance,
-                        simulation_time,
+                        timestep,
                     );
 
                     hshade_ovh = max_of_2(hshade_ovh, new_shade_height);
@@ -1044,7 +1018,7 @@ impl ExternalConditions {
         // (note only applicable to transparent building elements so window_shading
         // will always be False for other elements)
         if let Some(window_shading) = window_shading {
-            let current_hour = simulation_time.current_hour();
+            let current_hour = timestep.current_hour();
             let altitude = self.solar_altitudes[current_hour as usize];
             let azimuth = self.solar_azimuth_angles[current_hour as usize];
             for shading_object in window_shading {
@@ -1124,7 +1098,7 @@ impl ExternalConditions {
                         base_height,
                         *shading_height,
                         *distance,
-                        &simulation_time,
+                        timestep,
                     );
 
                     let new_shade_trans = *transparency;
@@ -1165,7 +1139,7 @@ impl ExternalConditions {
         orientation: Orientation360,
         window_shading: Option<&Vec<WindowShadingObject>>,
         f_sky: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         // Note: Shading factor for circumsolar radiation is same as for direct.
         //       As circumsolar radiation will be subtracted from diffuse and
@@ -1442,7 +1416,7 @@ impl ExternalConditions {
         } else {
             // Effective tilt angle equivalent of shading
             let angle_eff = ((2. * f_sky_new) - 1.).acos().to_degrees();
-            let diffuse_irr_ref_new = self.ground_reflection_irradiance(angle_eff, &simtime);
+            let diffuse_irr_ref_new = self.ground_reflection_irradiance(angle_eff, simtime);
             (f_sh_dif_rem * (diffuse_irr_sky + diffuse_irr_hor) + diffuse_irr_ref_new)
                 / diffuse_irr_total
         };
@@ -1785,13 +1759,13 @@ impl ExternalConditions {
         tilt: f64,
         orientation: Orientation360,
         window_shading: &[WindowShadingObject],
-        simulation_time: SimulationTimeIteration,
+        simulation_time: Timestep,
     ) -> anyhow::Result<(f64, f64)> {
         // # first check if there is any radiation. This is needed to prevent a potential
         // # divide by zero error in the final step, but also, if there is no radiation
         // # then shading is irrelevant and we can skip the whole calculation
         let CalculatedDirectDiffuseTotalIrradiance(direct, diffuse, _, diffuse_breakdown) = self
-            .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
+            .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, simulation_time);
 
         if diffuse_breakdown.is_none() {
             return Err(anyhow!(
@@ -1839,10 +1813,10 @@ impl ExternalConditions {
         tilt: f64,
         orientation: Orientation360,
         window_shading: &[WindowShadingObject],
-        simulation_time: SimulationTimeIteration,
+        simulation_time: Timestep,
     ) -> anyhow::Result<f64> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
-            .calculated_direct_diffuse_total_irradiance(tilt, orientation, false, &simulation_time);
+            .calculated_direct_diffuse_total_irradiance(tilt, orientation, false, simulation_time);
         let (direct_shading_factor, diffuse_shading_factor) = self
             .shading_reduction_factor_direct_diffuse(
                 base_height,
@@ -1857,8 +1831,8 @@ impl ExternalConditions {
         Ok(i_sol_dif * diffuse_shading_factor + i_sol_dir * direct_shading_factor)
     }
 
-    pub fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
-        let solar_angle = self.solar_angle_of_incidence(0., 180.0.into(), &simtime);
+    pub fn sun_above_horizon(&self, simtime: Timestep) -> bool {
+        let solar_angle = self.solar_angle_of_incidence(0., 180.0.into(), simtime);
         solar_angle < 90.
     }
 
@@ -3014,7 +2988,7 @@ mod tests {
     fn test_air_temp(external_conditions: ExternalConditions, simulation_time: SimulationTime) {
         for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.air_temp(&simtime_step),
+                external_conditions.air_temp(simtime_step),
                 [3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0][i],
                 "failed on iteration index {} with step {:?}",
                 i,
@@ -3030,7 +3004,7 @@ mod tests {
     ) {
         for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.air_temp(&simtime_step),
+                external_conditions.air_temp(simtime_step),
                 [3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0][i],
                 "failed on iteration index {} with step {:?}",
                 i,
@@ -3080,7 +3054,7 @@ mod tests {
         let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.wind_speed(&simtime_step),
+                external_conditions.wind_speed(simtime_step),
                 [5.4, 5.7, 5.4, 5.6, 5.3, 5.1, 4.8, 4.7][i]
             );
         }
@@ -3171,7 +3145,7 @@ mod tests {
         let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.solar_reflectivity_of_ground(&simtime_step),
+                external_conditions.solar_reflectivity_of_ground(simtime_step),
                 solar_reflectivity_of_ground[i]
             );
         }
@@ -3424,7 +3398,7 @@ mod tests {
                 external_conditions.solar_angle_of_incidence(
                     10.,
                     Orientation360::create_from_180(10.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     89.28367858027447,
@@ -3445,7 +3419,7 @@ mod tests {
                 external_conditions.solar_angle_of_incidence(
                     0.,
                     Orientation360::create_from_180(10.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     95.78366411883604,
@@ -3466,7 +3440,7 @@ mod tests {
                 external_conditions.solar_angle_of_incidence(
                     90.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     120.13031074122472,
@@ -3610,7 +3584,7 @@ mod tests {
                 external_conditions.direct_irradiance(
                     0.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -3631,7 +3605,7 @@ mod tests {
                 external_conditions.direct_irradiance(
                     65.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
             );
@@ -3642,7 +3616,7 @@ mod tests {
                 external_conditions.direct_irradiance(
                     65.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
             );
@@ -3653,7 +3627,7 @@ mod tests {
                 external_conditions.direct_irradiance(
                     65.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.,
@@ -3765,7 +3739,7 @@ mod tests {
                 external_conditions.a_over_b(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -3786,7 +3760,7 @@ mod tests {
                 external_conditions.a_over_b(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
             );
@@ -3797,7 +3771,7 @@ mod tests {
                 external_conditions.a_over_b(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [1.156236348588363, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
                 max_relative = 1e-8
@@ -3815,7 +3789,7 @@ mod tests {
                 external_conditions.diffuse_irradiance(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
@@ -3846,7 +3820,7 @@ mod tests {
                 external_conditions.diffuse_irradiance(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
@@ -3892,7 +3866,7 @@ mod tests {
                 external_conditions.diffuse_irradiance(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
@@ -3916,14 +3890,14 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.ground_reflection_irradiance(0., &t_it),
+                external_conditions.ground_reflection_irradiance(0., t_it),
                 [0., 0., 0., 0., 0., 0., 0., 0.][t_idx]
             );
         }
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.ground_reflection_irradiance(90., &t_it),
+                external_conditions.ground_reflection_irradiance(90., t_it),
                 [
                     0.0,
                     13.766683976432486,
@@ -3940,7 +3914,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.ground_reflection_irradiance(180., &t_it),
+                external_conditions.ground_reflection_irradiance(180., t_it),
                 [
                     0.0,
                     27.533367952864975,
@@ -3966,7 +3940,7 @@ mod tests {
                 external_conditions.circumsolar_irradiance(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -3987,7 +3961,7 @@ mod tests {
                 external_conditions.circumsolar_irradiance(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
             );
@@ -3998,7 +3972,7 @@ mod tests {
                 external_conditions.circumsolar_irradiance(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
             );
@@ -4015,7 +3989,7 @@ mod tests {
                 external_conditions.calculated_direct_irradiance(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4036,7 +4010,7 @@ mod tests {
                 external_conditions.calculated_direct_irradiance(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
             );
@@ -4047,7 +4021,7 @@ mod tests {
                 external_conditions.calculated_direct_irradiance(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
             );
@@ -4064,7 +4038,7 @@ mod tests {
                 external_conditions.calculated_diffuse_irradiance(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4085,7 +4059,7 @@ mod tests {
                 external_conditions.calculated_diffuse_irradiance(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4106,7 +4080,7 @@ mod tests {
                 external_conditions.calculated_diffuse_irradiance(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4133,7 +4107,7 @@ mod tests {
                 external_conditions.calculated_total_solar_irradiance(
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4154,7 +4128,7 @@ mod tests {
                 external_conditions.calculated_total_solar_irradiance(
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4175,7 +4149,7 @@ mod tests {
                 external_conditions.calculated_total_solar_irradiance(
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
-                    &t_it
+                    t_it
                 ),
                 [
                     0.0,
@@ -4203,7 +4177,7 @@ mod tests {
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
                     true,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(
@@ -4305,7 +4279,7 @@ mod tests {
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
                     true,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(
@@ -4407,7 +4381,7 @@ mod tests {
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
                     true,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(
@@ -4509,7 +4483,7 @@ mod tests {
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
                     false,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
@@ -4566,7 +4540,7 @@ mod tests {
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
                     false,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
@@ -4623,7 +4597,7 @@ mod tests {
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
                     false,
-                    &t_it
+                    t_it
                 ),
                 [
                     CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
@@ -4684,7 +4658,7 @@ mod tests {
             assert!(!external_conditions.outside_solar_beam(
                 0.,
                 Orientation360::create_from_180(0.).unwrap(),
-                &t_it
+                t_it
             ));
         }
 
@@ -4692,7 +4666,7 @@ mod tests {
             assert!(external_conditions.outside_solar_beam(
                 90.,
                 Orientation360::create_from_180(180.).unwrap(),
-                &t_it
+                t_it
             ));
         }
 
@@ -4700,7 +4674,7 @@ mod tests {
             assert!(external_conditions.outside_solar_beam(
                 180.,
                 Orientation360::create_from_180(-180.).unwrap(),
-                &t_it
+                t_it
             ));
         }
     }
@@ -4712,7 +4686,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                external_conditions.get_segment(&t_it).unwrap(),
+                external_conditions.get_segment(t_it).unwrap(),
                 [
                     ShadingSegment {
                         start360: Orientation360::create_from_180(90.).unwrap(),
@@ -4791,7 +4765,7 @@ mod tests {
         .into();
 
         assert!(external_conditions
-            .get_segment(&simulation_time.iter().next().unwrap())
+            .get_segment(simulation_time.iter().next().unwrap())
             .is_err());
 
         // For the value of end > start in second shading segment
@@ -4815,7 +4789,7 @@ mod tests {
         .into();
 
         assert!(external_conditions
-            .get_segment(&simulation_time.iter().next().unwrap())
+            .get_segment(simulation_time.iter().next().unwrap())
             .is_err());
     }
 
@@ -4827,7 +4801,7 @@ mod tests {
         // Test for peak hours in Jan
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.obstacle_shading_height(3., 5., 1., &t_it),
+                external_conditions.obstacle_shading_height(3., 5., 1., t_it),
                 [
                     2.0,
                     1.9691178812624324,
@@ -4858,7 +4832,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_july.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.obstacle_shading_height(3., 5., 1., &t_it),
+                external_conditions.obstacle_shading_height(3., 5., 1., t_it),
                 [
                     0.5367256982895989,
                     0.240221480766996,

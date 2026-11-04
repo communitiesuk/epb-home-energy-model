@@ -2,7 +2,7 @@ use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::SmartApplianceControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::schedule::validate_schedule_length;
-use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::core::simulation_time::{SimulationTimeIterator, Timestep};
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsEvent, ApplianceLoadShifting};
 use anyhow::{anyhow, bail};
@@ -38,7 +38,7 @@ impl Gains {
     pub fn total_internal_gain_in_w(
         &self,
         zone_area: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         match self {
             Gains::Internal(internal) => Ok(internal.total_internal_gain_in_w(zone_area, simtime)),
@@ -71,11 +71,7 @@ impl InternalGains {
     }
 
     /// Return the total internal gain for the current timestep in W
-    pub fn total_internal_gain_in_w(
-        &self,
-        zone_area: f64,
-        simtime: SimulationTimeIteration,
-    ) -> f64 {
+    pub fn total_internal_gain_in_w(&self, zone_area: f64, simtime: Timestep) -> f64 {
         self.total_internal_gains[simtime.time_series_idx(self.start_day, self.time_series_step)]
             * zone_area
     }
@@ -125,13 +121,13 @@ impl ApplianceGains {
     pub fn total_internal_gain_in_w(
         &self,
         zone_area: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let total_energy_supplied = self.total_energy_supply
             [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
         let total_energy_supplied_kwh =
-            total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * simtime.timestep;
+            total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * simtime.step;
 
         self.energy_supply_connection
             .demand_energy(total_energy_supplied_kwh, simtime.index)?;
@@ -264,7 +260,7 @@ impl EventApplianceGains {
         Ok(gains)
     }
 
-    fn process_events(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+    fn process_events(&self, simtime: Timestep) -> anyhow::Result<()> {
         // adds demand from events  to the total annual demand. If there is loadshifting the demand
         // of the event may occur in the future rather than at the time specified
         for event in self.usage_events.read().iter() {
@@ -442,13 +438,13 @@ impl EventApplianceGains {
     pub(crate) fn total_internal_gain_in_w(
         &self,
         zone_area: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         // Forward electricity demand (in kWh) to relevant EnergySupply object
         let total_power_supplied = self.total_power_supply[simtime.index].load(Ordering::SeqCst);
         let total_power_supplied_zone = total_power_supplied * zone_area / self.total_floor_area;
         let total_energy_supplied_kwh =
-            total_power_supplied_zone / WATTS_PER_KILOWATT as f64 * simtime.timestep;
+            total_power_supplied_zone / WATTS_PER_KILOWATT as f64 * simtime.step;
 
         self.energy_supply_conn
             .demand_energy(total_energy_supplied_kwh, simtime.index)?;

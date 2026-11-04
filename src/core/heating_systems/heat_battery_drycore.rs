@@ -10,7 +10,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
 use crate::core::material_properties::WATER;
-use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::Timestep;
 use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
     interp1d, solve_ivp::solve_ivp, solve_ivp::OdeResult, solve_ivp::TerminateDirection,
@@ -281,7 +281,7 @@ impl HeatStorageDryCore {
         mode: OutputMode,
         time_remaining: Option<f64>,
         target_energy: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
         let (soc_array, power_func) = match mode {
             OutputMode::Min => (&self.soc_min_array, Arc::clone(&self.power_min_func)),
@@ -294,7 +294,7 @@ impl HeatStorageDryCore {
         let power_interp = LinearInterpolator::new(soc_array, &power_values);
 
         // Charging: determine the maximum power available for charging
-        let target_charge = self.target_electric_charge(*simtime);
+        let target_charge = self.target_electric_charge(timestep);
         let (charge_rate, soc_max) = if target_charge > 0. {
             (self.pwr_in, target_charge)
         } else {
@@ -400,7 +400,7 @@ impl HeatStorageDryCore {
         let current_soc = self.state_of_charge.load(Ordering::SeqCst);
         let initial_energy_charged = 0.0; // No energy charged initially
         let initial_energy_delivered = 0.0; // No energy charged initially
-        let time_remaining = time_remaining.unwrap_or(simtime.timestep);
+        let time_remaining = time_remaining.unwrap_or(timestep.step);
 
         // Solve the ODE for SOC, cumulative energy charged, and cumulative energy delivered
         let sol = solve_ivp(
@@ -476,7 +476,7 @@ impl HeatStorageDryCore {
         mode: OutputMode,
         time_remaining: Option<f64>,
         target_energy: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         let (soc_array, power_func) = match mode {
             OutputMode::Min => (&self.soc_min_array, Arc::clone(&self.power_min_func)),
@@ -489,7 +489,7 @@ impl HeatStorageDryCore {
             LinearInterpolator::new(&self.soc_min_array, &(self.power_min_func)(soc_array));
 
         // Charging: determine the maximum power available for charging
-        let target_charge = self.target_electric_charge(*simtime);
+        let target_charge = self.target_electric_charge(timestep);
         let (charge_rate, soc_max) = if target_charge > 0.
             && !relative_eq!(target_charge, 0.0, max_relative = 1e-9, epsilon = 1e-10)
         {
@@ -565,7 +565,7 @@ impl HeatStorageDryCore {
         // Initial conditions
         let current_soc = self.state_of_charge.load(Ordering::SeqCst);
         let initial_conditions = [current_soc, 0.0, 0.0, 0.0];
-        let time_remaining = time_remaining.unwrap_or(simtime.timestep);
+        let time_remaining = time_remaining.unwrap_or(timestep.step);
 
         // Solve the ODE for SOC, cumulative energy charged, and cumulative energy delivered
         let sol = solve_ivp(
@@ -605,10 +605,7 @@ impl HeatStorageDryCore {
         ))
     }
 
-    pub(crate) fn target_electric_charge(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    pub(crate) fn target_electric_charge(&self, timestep: Timestep) -> f64 {
         // Calculates target charge from potential to charge system
 
         let charge_control = &self.charge_control;
@@ -620,7 +617,7 @@ impl HeatStorageDryCore {
         match logic_type {
             ControlLogicType::Manual => {
                 // Implements the "Manual" control logic for ESH
-                charge_control.target_charge(simulation_time_iteration, None)
+                charge_control.target_charge(timestep, None)
             }
             ControlLogicType::Automatic => {
                 // Implements the "Automatic" control logic for ESH
@@ -632,7 +629,7 @@ impl HeatStorageDryCore {
                 // This is currently included by the schedule parameter in charge control object
 
                 // TODO (from Python): Check and implement if external temperature sensors are also used for Automatic controls.
-                charge_control.target_charge(simulation_time_iteration, temp_air)
+                charge_control.target_charge(timestep, temp_air)
             }
             ControlLogicType::Celect => {
                 // Implements the "CELECT" control logic for ESH
@@ -640,7 +637,7 @@ impl HeatStorageDryCore {
                 // to a central control device. It monitors the individual room sensors and optimises
                 // the charging of all the storage heaters individually (and may select direct acting
                 // heaters in preference to storage heaters).
-                charge_control.target_charge(simulation_time_iteration, temp_air)
+                charge_control.target_charge(timestep, temp_air)
             }
             ControlLogicType::Hhrsh => {
                 // Implements the "HHRSH" control logic for ESH
@@ -654,7 +651,7 @@ impl HeatStorageDryCore {
                     self.demand_met.load(Ordering::SeqCst)
                         + self.demand_unmet.load(Ordering::SeqCst),
                     self.owner().get_zone_setpoint(),
-                    simulation_time_iteration,
+                    timestep,
                 );
 
                 // None means not enough past data to do the calculation (Initial 24h of the calculation)
@@ -681,7 +678,7 @@ impl HeatStorageDryCore {
                 // target_charge (from input file, or zero when control is off) applied here
                 // is treated as an upper limit for target charge
                 charge_control
-                    .target_charge(simulation_time_iteration, None)
+                    .target_charge(timestep, None)
                     .min(target_charge_hhrsh)
             }
             ControlLogicType::HeatBattery => {
@@ -695,7 +692,7 @@ impl HeatStorageDryCore {
                 let energy_to_store = charge_control.energy_to_store(
                     self.demand_met() + self.demand_unmet(),
                     self.get_zone_setpoint(),
-                    simulation_time_iteration,
+                    timestep,
                 );
 
                 // None means not enough past data to do the calculation (Initial 24h of the calculation)
@@ -723,7 +720,7 @@ impl HeatStorageDryCore {
                 // target_charge (from input, or zero when control is off) applied here
                 // is treated as an upper limit for target charge
                 charge_control
-                    .target_charge(simulation_time_iteration, None)
+                    .target_charge(timestep, None)
                     .min(target_charge_hb)
             }
         }
@@ -834,19 +831,19 @@ impl HeatBatteryDryCoreService {
         Self { control }
     }
 
-    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
+    fn is_on(&self, simtime: Timestep) -> bool {
         self.control
             .as_ref()
             .map(|control| match control {
-                Either::Left(c) => c.is_on(&simtime),
-                Either::Right(c) => c.is_on(&simtime),
+                Either::Left(c) => c.is_on(simtime),
+                Either::Right(c) => c.is_on(simtime),
             })
             .unwrap_or(true)
     }
 }
 
 trait HeatBatteryDryCoreServiceBehaviour {
-    fn is_on(&self, simtime: SimulationTimeIteration) -> bool;
+    fn is_on(&self, simtime: Timestep) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -871,8 +868,8 @@ impl HeatBatteryDryCoreServiceWaterRegular {
         }
     }
 
-    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt(&simtime)
+    pub(crate) fn setpnt(&self, simtime: Timestep) -> (Option<f64>, Option<f64>) {
+        self.control.setpnt(simtime)
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -892,7 +889,7 @@ impl HeatBatteryDryCoreServiceWaterRegular {
         temp_flow: Option<f64>,
         temp_return: f64,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         ignore_standard_ctrl: Option<bool>,
     ) -> anyhow::Result<f64> {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
@@ -926,7 +923,7 @@ impl HeatBatteryDryCoreServiceWaterRegular {
         &self,
         temp_flow: f64,
         _temp_return: f64,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
         ignore_standard_ctrl: Option<bool>,
     ) -> anyhow::Result<f64> {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
@@ -936,7 +933,7 @@ impl HeatBatteryDryCoreServiceWaterRegular {
         }
 
         self.heat_battery
-            .energy_output_max(temp_flow, None, &simtime)
+            .energy_output_max(temp_flow, None, simtime)
     }
 }
 
@@ -977,7 +974,7 @@ impl HeatBatteryDryCoreServiceWaterDirect {
         &self,
         volume_req: f64,
         volume_req_already: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.0);
 
@@ -1021,7 +1018,7 @@ impl HeatBatteryDryCoreServiceWaterDirect {
     pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<WaterEventResult>>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.0;
         let mut total_volume = 0.0;
@@ -1103,14 +1100,14 @@ impl HeatBatteryDryCoreServiceSpace {
         }
     }
 
-    pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
-        self.control.as_ref().and_then(|c| c.setpnt(&simtime))
+    pub(crate) fn temp_setpnt(&self, simtime: Timestep) -> Option<f64> {
+        self.control.as_ref().and_then(|c| c.setpnt(simtime))
     }
 
-    pub(crate) fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, simtime: Timestep) -> Option<bool> {
         self.control
             .as_ref()
-            .and_then(|c| c.in_required_period(&simtime))
+            .and_then(|c| c.in_required_period(simtime))
     }
 
     /// Process space heating demand through dry core heat battery.
@@ -1121,7 +1118,7 @@ impl HeatBatteryDryCoreServiceSpace {
         temp_return: f64,
         _time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
@@ -1149,7 +1146,7 @@ impl HeatBatteryDryCoreServiceSpace {
         temp_output: f64,
         _temp_return_feed: f64,
         time_start: Option<f64>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.0);
         if !self.core_service.is_on(simtime) {
@@ -1157,7 +1154,7 @@ impl HeatBatteryDryCoreServiceSpace {
         }
 
         self.heat_battery
-            .energy_output_max(temp_output, time_start.into(), &simtime)
+            .energy_output_max(temp_output, time_start.into(), simtime)
     }
 }
 
@@ -1399,12 +1396,12 @@ impl HeatBatteryDryCore {
         service_on: bool,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
+        simtime: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.0);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
-        let timestep = simtime.timestep;
+        let timestep = simtime.step;
         let time_remaining = self.time_available(time_start, timestep);
 
         let energy_output_required = energy_output_required / self.n_units() as f64;
@@ -1475,7 +1472,7 @@ impl HeatBatteryDryCore {
                         OutputMode::Max,
                         time_remaining.into(),
                         None,
-                        &simtime,
+                        simtime,
                     )?;
 
                 // For DHW direct, no charging during same timestep
@@ -1504,7 +1501,7 @@ impl HeatBatteryDryCore {
                         OutputMode::Max,
                         time_remaining.into(),
                         energy_output_required.into(),
-                        &simtime,
+                        simtime,
                     )?;
                     let energy_delivered_hb = energy_delivered_hb.min(energy_output_required);
                     (
@@ -1673,11 +1670,11 @@ impl HeatBatteryDryCore {
         mode: OutputMode,
         time_remaining: Option<f64>,
         target_energy: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         self.storage
             .read()
-            .energy_output_with_losses(mode, time_remaining, target_energy, simtime)
+            .energy_output_with_losses(mode, time_remaining, target_energy, timestep)
     }
 
     fn energy_output(
@@ -1685,11 +1682,11 @@ impl HeatBatteryDryCore {
         mode: OutputMode,
         time_remaining: Option<f64>,
         target_energy: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
         self.storage
             .read()
-            .energy_output(mode, time_remaining, target_energy, simtime)
+            .energy_output(mode, time_remaining, target_energy, timestep)
     }
 
     /// Calculate maximum energy output for current SOC and temperature requirements.
@@ -1704,12 +1701,12 @@ impl HeatBatteryDryCore {
         &self,
         _temp_output: f64,
         time_start: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        timestep: Timestep,
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.0);
 
-        let timestep = self.simulation_timestep;
-        let time_remaining = self.time_available(time_start, timestep);
+        let step_in_hours = self.simulation_timestep;
+        let time_remaining = self.time_available(time_start, step_in_hours);
 
         // # Report the energy net of the standing (MIN-output) loss, using the same
         // Report the energy net of the standing (MIN-output) loss, using the same
@@ -1720,7 +1717,7 @@ impl HeatBatteryDryCore {
             OutputMode::Max,
             time_remaining.into(),
             None,
-            simtime,
+            timestep,
         )?;
 
         let energy_instant = if self.power_instant != 0.0 {
@@ -1738,8 +1735,8 @@ impl HeatBatteryDryCore {
     }
 
     /// Calculations to be done at the end of each timestep.
-    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
-        let timestep = simtime.timestep;
+    pub(crate) fn timestep_end(&self, simtime: Timestep) -> anyhow::Result<()> {
+        let timestep = simtime.step;
         let total_time_running_current_timestep = self
             .total_time_running_current_timestep
             .load(Ordering::SeqCst);
@@ -1755,13 +1752,10 @@ impl HeatBatteryDryCore {
             .demand_energy(energy_aux, simtime.index)?;
 
         let (energy_charged, final_losses) = if time_remaining > 0. {
-            let (_, _, energy_charged, final_soc, final_losses) =
-                self.storage.read().energy_output_with_losses(
-                    OutputMode::Min,
-                    time_remaining.into(),
-                    None,
-                    &simtime,
-                )?;
+            let (_, _, energy_charged, final_soc, final_losses) = self
+                .storage
+                .read()
+                .energy_output_with_losses(OutputMode::Min, time_remaining.into(), None, simtime)?;
             self.energy_supply_connection
                 .demand_energy(energy_charged * self.n_units() as f64, simtime.index)?;
             self.set_state_of_charge(final_soc);
@@ -3594,20 +3588,20 @@ mod tests {
         // assertions for invalid modes do not need testing in the Rust as these are inexpressible using the OutputMode enums
 
         assert_eq!(
-            heat_battery.energy_output_max(35., None, &simtime).unwrap(),
+            heat_battery.energy_output_max(35., None, simtime).unwrap(),
             2.0
         );
 
         assert_eq!(
             heat_battery
-                .energy_output_with_losses(OutputMode::Max, Some(0.0), None, &simtime)
+                .energy_output_with_losses(OutputMode::Max, Some(0.0), None, simtime)
                 .unwrap(),
             (0.0, 0.0, 0.0, 0.0, 0.0)
         );
 
         assert_eq!(
             heat_battery
-                .energy_output_with_losses(OutputMode::Max, None, None, &simtime)
+                .energy_output_with_losses(OutputMode::Max, None, None, simtime)
                 .unwrap(),
             (0.0, 0.0, 0.0, 0.0, 0.0)
         );
@@ -3618,7 +3612,7 @@ mod tests {
             heat_battery
                 .storage
                 .read()
-                .energy_output(OutputMode::Max, None, None, &simtime)
+                .energy_output(OutputMode::Max, None, None, simtime)
                 .unwrap(),
             (0.0, 0.0, 0.0, 0.0)
         );
