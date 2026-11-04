@@ -6,17 +6,17 @@ use crate::core::controls::time_control::{
     CompositeRangeTimeControl, Control, SetpointOrCombinationControl, SetpointTimeControl,
 };
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::Pipework;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 #[cfg(test)]
 use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
 use crate::core::water_heat_demand::misc::{summarise_events, WaterEventResult};
 use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
-use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
-use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
 use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
@@ -4002,21 +4002,21 @@ mod tests {
         ControlSetPoint, RangeTimeControl, ScheduleOrSetpointControl, SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::external_conditions::{
+        DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
+    };
     use crate::core::heating_systems::common::HeatSourceWet;
     use crate::core::heating_systems::heat_pump::HeatPumpHotWaterOnly;
     use crate::core::material_properties::WATER;
     use crate::core::pipework::PipeworkLocation;
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::corpus::HeatSource;
-    use crate::external_conditions::{
-        DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
-    };
     use crate::input::{
         FuelType, HeatPumpHotWaterOnlyTestDatum, HeatPumpHotWaterTestData, PipeworkContents,
         WaterPipeworkLocation,
     };
-    use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;

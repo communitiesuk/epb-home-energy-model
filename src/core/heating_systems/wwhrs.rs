@@ -1,5 +1,5 @@
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::input::WwhrsConfiguration as WwhrsConfigurationInput;
-use crate::simulation_time::SimulationTimeIteration;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -577,7 +577,7 @@ impl WwhrsInstantaneous {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use rstest::*;
 
     #[fixture]

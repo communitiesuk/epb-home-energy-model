@@ -1,4 +1,4 @@
-use crate::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 
 /// This module provides objects to represent the source(s) of cold water.
@@ -53,7 +53,7 @@ impl ColdWaterSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use pretty_assertions::assert_eq;
 
     #[test]

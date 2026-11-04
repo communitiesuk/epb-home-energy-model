@@ -1,12 +1,12 @@
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
-use crate::core::space_heat_demand::building_element::projected_height;
-use crate::core::units::{Orientation360, WATTS_PER_KILOWATT};
-use crate::external_conditions::{
+use crate::core::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
+use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::space_heat_demand::building_element::projected_height;
+use crate::core::units::{Orientation360, WATTS_PER_KILOWATT};
 use crate::input::{InverterType, PhotovoltaicVentilationStrategy};
-use crate::simulation_time::SimulationTimeIteration;
 use approx::relative_eq;
 use std::sync::Arc;
 
@@ -377,12 +377,12 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::external_conditions::{
+    use crate::core::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::hem_core::simulation_time::SimulationTimeIterator;
+    use crate::core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTimeIterator;
     use crate::input::FuelType;
-    use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use parking_lot::RwLock;
     use rstest::*;

@@ -5,6 +5,7 @@ use crate::core::controls::time_control::{
     ChargeControl, CompositeRangeTimeControl, RangeTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
 use crate::core::heating_systems::common::{HeatSourceWet, HeatingServiceType};
 use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
@@ -16,6 +17,8 @@ use crate::core::heating_systems::storage_tank::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
+use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIterator;
 use crate::core::units::{
     self, KILOJOULES_PER_KILOWATT_HOUR, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, SECONDS_PER_MINUTE,
     WATTS_PER_KILOWATT,
@@ -24,13 +27,10 @@ use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep, TempInternalAirFn};
-use crate::hem_core::external_conditions::ExternalConditions;
-use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     HeatBattery as HeatBatteryInput, HeatSourceWetDetails, PcmBatteryChargingConfiguration,
     ScheduleUnit,
 };
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail, Ok};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -3361,13 +3361,15 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
+    use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::core::simulation_time::{
+        SimulationTime, SimulationTimeIteration, SimulationTimeIterator,
+    };
     use crate::core::water_heat_demand::misc::WaterEventResultType;
-    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
         HeatSourceWetDetails, PcmBatteryChargingConfiguration,
     };
-    use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
     use approx::{assert_relative_eq, assert_relative_ne};
     use indexmap::indexmap;
     use itertools::Itertools;

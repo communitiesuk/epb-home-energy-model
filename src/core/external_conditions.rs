@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
 use crate::compare_floats::{max_of_2, min_of_2};
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use crate::core::units::{Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY};
 use crate::input::ExternalConditionsInput;
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
 #[cfg(test)]
 use approx::{AbsDiffEq, RelativeEq};
@@ -2607,9 +2607,9 @@ fn init_dimensionless_sky_brightness_parameter(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::external_conditions::DaylightSavingsConfig::NotApplicable;
+    use crate::core::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use crate::core::units::DAYS_IN_MONTH;
-    use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
-    use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;

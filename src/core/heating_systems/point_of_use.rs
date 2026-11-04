@@ -1,7 +1,7 @@
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
-use crate::simulation_time::SimulationTimeIteration;
 use approx::relative_eq;
 use fsum::FSum;
 
@@ -88,6 +88,7 @@ impl PointOfUse {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::{
         core::{
@@ -95,7 +96,6 @@ mod tests {
             water_heat_demand::cold_water_source::ColdWaterSource,
         },
         input::FuelType,
-        simulation_time::{SimulationTime, SimulationTimeIterator},
     };
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;

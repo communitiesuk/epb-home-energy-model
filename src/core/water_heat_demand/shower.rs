@@ -1,11 +1,11 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::wwhrs::{WwhrsConfiguration, WwhrsInstantaneous};
 use crate::core::material_properties::WATER;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use approx::relative_eq;
 use fsum::FSum;
@@ -276,8 +276,8 @@ mod tests {
 
     mod mixer_shower {
         use super::*;
+        use crate::core::simulation_time::SimulationTime;
         use crate::core::water_heat_demand::misc::CallableGetHotWaterTemperature;
-        use crate::simulation_time::SimulationTime;
         use approx::assert_relative_eq;
         use itertools::Itertools;
         use parking_lot::Mutex;
@@ -563,8 +563,8 @@ mod tests {
     mod instant_elec_shower {
         use super::*;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::simulation_time::SimulationTime;
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-        use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{FuelType, WaterHeatingEvent};
         use parking_lot::RwLock;
         use rstest::rstest;

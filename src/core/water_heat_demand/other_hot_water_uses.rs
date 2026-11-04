@@ -1,7 +1,7 @@
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use std::sync::Arc;
 
@@ -60,7 +60,7 @@ impl OtherHotWater {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;

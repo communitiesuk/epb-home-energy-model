@@ -1,12 +1,14 @@
 /// This module provides objects to represent radiator and underfloor emitter systems.
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::{
     BufferTankEmittersData, BufferTankEmittersDataWithResult,
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
     bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
@@ -16,13 +18,11 @@ use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
     MILLIMETRES_IN_METRE, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
-use crate::external_conditions::ExternalConditions;
 use crate::input::{
     EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData, WaterPipework,
     WaterPipeworkLocation, WetEmitter as WetEmitterInput,
 };
 use crate::output::OutputEmitters;
-use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
 use accurate::sum::Sum2;
@@ -2013,13 +2013,13 @@ mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::external_conditions::DaylightSavingsConfig;
+    use crate::core::external_conditions::ShadingSegment;
+    use crate::core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTimeIterator;
     use crate::core::units::Orientation360;
-    use crate::external_conditions::DaylightSavingsConfig;
-    use crate::external_conditions::ShadingSegment;
     use crate::input::FuelType;
     use crate::input::{PipeworkContents, WetEmitter as WetEmitterInput};
-    use crate::simulation_time::SimulationTime;
-    use crate::simulation_time::SimulationTimeIterator;
     use approx::assert_relative_eq;
     use parking_lot::RwLock;
     use rstest::fixture;

@@ -4,6 +4,7 @@ use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::TypedScheduleEvent;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -19,7 +20,6 @@ use crate::input::{
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
     WaterDistribution as WaterDistributionInput, WaterHeatingEvent, WaterPipeworkSimple,
 };
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -1006,12 +1006,12 @@ pub mod tests {
     use crate::compare_floats::max_of_2;
     use crate::core::common::WaterSupply;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::{
         Baths, FuelType, MixerShowerWwhrsConfiguration, OtherWaterUses, Showers,
         WaterPipeworkLocation,
     };
-    use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use fsum::FSum;
     use parking_lot::RwLock;

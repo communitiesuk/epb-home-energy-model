@@ -2,7 +2,7 @@ use super::space_cool_system_base::SpaceCoolSystem;
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIteration;
 
 /// This module provides objects to air conditioning.
 
@@ -91,8 +91,8 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::simulation_time::SimulationTime;
     use crate::input::FuelType;
-    use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;

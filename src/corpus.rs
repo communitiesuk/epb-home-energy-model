@@ -16,6 +16,8 @@ use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::energy_supply::tariff_data::TariffData;
+use crate::core::external_conditions::ExternalConditionsDataMissingError;
+use crate::core::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{
     HeatBatteryServiceSpace, HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem,
@@ -52,6 +54,8 @@ use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
     ScheduleEvent, TypedScheduleEvent,
 };
+use crate::core::simulation_time::{SimulationTime, HOURS_IN_DAY};
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::core::space_heat_demand::building_element::{
     calculate_cavity_resistance, convert_uvalue_to_resistance, BuildingElement,
     BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
@@ -80,9 +84,6 @@ use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
 use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
 use crate::core::water_heat_demand::dhw_demand::{OutletType, ELECTRIC_SHOWERS_HWS_NAME};
 use crate::core::water_heat_demand::misc::WaterEventResult;
-use crate::external_conditions::{create_external_conditions, ExternalConditions};
-use crate::hem_core::external_conditions::ExternalConditionsDataMissingError;
-use crate::hem_core::simulation_time::{SimulationTime, HOURS_IN_DAY};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
@@ -117,7 +118,6 @@ use crate::output::{
     OutputZoneData,
 };
 use crate::output::{OutputEmitters, OutputMetadata};
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::percentile;
 use crate::StringOrNumber;
 use crate::{convert_profile_to_daily, HEM_VERSION};

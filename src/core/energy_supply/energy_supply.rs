@@ -2,9 +2,9 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::errors::NotImplementedError;
 use crate::input::FuelType;
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -1245,10 +1245,10 @@ impl From<EnergySupplyTariff> for &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::hem_core::simulation_time::SimulationTimeIterator;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTimeIterator;
     use crate::input::BatteryLocation;
-    use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;

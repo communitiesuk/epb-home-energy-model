@@ -10,6 +10,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
 use crate::core::material_properties::WATER;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
     interp1d, solve_ivp::solve_ivp, solve_ivp::OdeResult, solve_ivp::TerminateDirection,
@@ -22,7 +23,6 @@ use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
-use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
 use crate::statistics::{linspace, np_interp};
 use anyhow::bail;
@@ -2084,9 +2084,9 @@ mod tests {
         ChargeControl, Control, MockControl, RangeTimeControl, SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
-    use crate::hem_core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::hem_core::simulation_time::SimulationTime;
     use crate::input::{ExternalSensor, ExternalSensorCorrelation, FuelType};
     use approx::assert_relative_eq;
     use rstest::*;

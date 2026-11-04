@@ -13,9 +13,9 @@
 /// self-contained while allowing each subclass to provide its own temperature
 /// sources.
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::corpus::TempInternalAirFn;
-use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
@@ -261,7 +261,7 @@ impl PrimaryPipeworkLossesMixin {
 mod tests {
     use super::*;
     use crate::core::pipework::Pipework;
-    use crate::hem_core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use crate::input::PipeworkContents;
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};

@@ -1,8 +1,8 @@
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::external_conditions::ExternalConditions;
+use crate::core::external_conditions::ExternalConditions;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::input::BatteryLocation;
 use crate::input::ElectricBattery as ElectricBatteryInput;
-use crate::simulation_time::SimulationTimeIteration;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
 use std::sync::atomic::Ordering;
@@ -394,11 +394,11 @@ impl ElectricBattery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::units::Orientation360;
-    use crate::external_conditions::{
+    use crate::core::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
+    use crate::core::units::Orientation360;
     use approx::assert_relative_eq;
     use rstest::*;
 

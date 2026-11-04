@@ -8,24 +8,24 @@ use crate::core::controls::time_control::{
     CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls, validate_schedule_length};
+use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIterator;
 use crate::core::units::{
     celsius_to_kelvin, kelvin_to_celsius, BelowAbsoluteZeroError, HOURS_PER_DAY,
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep, TempInternalAirFn};
-use crate::external_conditions::ExternalConditions;
-use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
     HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType,
     HeatPumpTestDatum as HeatPumpTestDatumInput, HeatSourceWetDetails, HotWaterSourceDetails,
 };
-use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -4871,16 +4871,16 @@ mod tests {
         SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::core::heating_systems::boiler::BoilerForBoilerService;
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
         BoilerHotWaterTest, BoilerType, CombiTypeSpecificDetails, FuelType, HeatPumpBufferTank,
         HeatSourceLocation,
     };
-    use crate::simulation_time::SimulationTime;
-    use crate::{core::material_properties::WATER, external_conditions::ShadingSegment, input};
+    use crate::{core::material_properties::WATER, input};
     use approx::{assert_relative_eq, assert_ulps_eq};
     use indexmap::indexmap;
     use pretty_assertions::assert_eq;

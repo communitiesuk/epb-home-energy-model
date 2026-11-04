@@ -1,20 +1,20 @@
 use crate::core::controls::time_control::{ControlSetPoint, OnOffControl, SetpointTimeControl};
+use crate::core::external_conditions::{
+    CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
+};
+use crate::core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIterator;
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
     JOULES_PER_KILOJOULE,
 };
 use crate::corpus::Controls;
-use crate::external_conditions::{
-    CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
-};
-use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     EdgeInsulation, FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType,
     WindShieldLocation, WindowTreatment as WindowTreatmentInput,
     WindowTreatmentControl as WindowTreatmentControlInput, WindowTreatmentType,
     PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -3407,8 +3407,8 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
-    use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use crate::core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;

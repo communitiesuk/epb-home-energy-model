@@ -2,9 +2,9 @@ use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::SmartApplianceControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::schedule::validate_schedule_length;
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsEvent, ApplianceLoadShifting};
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -480,8 +480,8 @@ mod tests {
 
     mod internal_gains {
         use super::*;
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::core::space_heat_demand::internal_gains::InternalGains;
-        use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
         use pretty_assertions::assert_eq;
 
         #[fixture]
@@ -511,8 +511,8 @@ mod tests {
 
     mod appliance_gains {
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::core::space_heat_demand::internal_gains::ApplianceGains;
-        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::input::FuelType;
         use parking_lot::RwLock;
         use rstest::{fixture, rstest};
@@ -561,8 +561,8 @@ mod tests {
         use crate::core::energy_supply::energy_supply::{
             EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
         };
+        use crate::core::simulation_time::SimulationTime;
         use crate::core::space_heat_demand::internal_gains::EventApplianceGains;
-        use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
             ApplianceGainsDetails, ApplianceGainsEvent, FuelType, SmartApplianceBattery,
         };
@@ -1060,8 +1060,8 @@ mod tests {
         use crate::core::energy_supply::energy_supply::{
             EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
         };
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::core::space_heat_demand::internal_gains::{ApplianceGains, EventApplianceGains};
-        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::input::{
             ApplianceGainsDetails, ApplianceGainsEvent, FuelType, SmartApplianceBattery,
         };

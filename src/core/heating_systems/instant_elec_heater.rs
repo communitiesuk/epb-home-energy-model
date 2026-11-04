@@ -3,10 +3,10 @@
 use crate::core::controls::time_control::SetpointOrCombinationControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::constants::MAX_TEMPERATURE_TOUCHABLE;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::solvers::root;
 use crate::core::solvers::solve_ivp::{solve_ivp, OdeResult, TerminatingEvent};
 use crate::corpus::TempInternalAirFn;
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
@@ -652,8 +652,8 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::simulation_time::SimulationTime;
     use crate::input::FuelType;
-    use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;

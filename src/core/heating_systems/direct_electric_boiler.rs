@@ -4,12 +4,12 @@ use crate::core::controls::time_control::{
     CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
     CombiBoilerConfig, IncorrectBoilerDataType, ServiceResult, ServiceType,
 };
-use crate::external_conditions::ExternalConditions;
-use crate::hem_core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -354,10 +354,10 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{RangeTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::hem_core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::hem_core::simulation_time::SimulationTime;
     use crate::input::CombiKeepHotFuel;
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};

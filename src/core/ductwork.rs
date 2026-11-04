@@ -159,7 +159,7 @@ impl Ductwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use rstest::*;
 

@@ -1,4 +1,4 @@
-use crate::hem_core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIteration;
 
 pub(crate) trait OnSiteGeneration {
     /// Produce energy from the on-site generation system

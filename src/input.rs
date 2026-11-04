@@ -1,9 +1,9 @@
+use crate::core::external_conditions::{ShadingSegment, WindowShadingObject};
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
+use crate::core::simulation_time::SimulationTime;
 use crate::core::units::{calculate_thermal_resistance_of_virtual_layer, Orientation360};
-use crate::external_conditions::{ShadingSegment, WindowShadingObject};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -9638,7 +9638,7 @@ mod tests {
 
     mod shading_object {
         use super::*;
-        use crate::hem_core::external_conditions::{ShadingObject, ShadingObjectType};
+        use crate::core::external_conditions::{ShadingObject, ShadingObjectType};
 
         #[fixture]
         fn valid_example() -> JsonValue {

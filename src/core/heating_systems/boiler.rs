@@ -4,18 +4,18 @@ use crate::core::controls::time_control::{
     CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{
     water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
 };
-use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerHotWaterTest, BoilerPilotLight, BoilerType, CombiKeepHotFuel, CombiTypeSpecificDetails,
     FuelCategory, FuelType, HotWaterSourceDetails,
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
-use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::{abs_diff_eq, relative_eq};
@@ -1843,9 +1843,9 @@ pub(crate) struct ServiceResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
+    use crate::core::simulation_time::SimulationTime;
     use crate::core::units::Orientation360;
-    use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::simulation_time::SimulationTime;
     use rstest::*;
     // In Python there are tests covering the abstract base class BoilerService which we have not
     // implemented in Rust. Instead, we have directly implemented the `is_on` method on the concrete
@@ -1930,14 +1930,14 @@ mod tests {
         use crate::core::common::WaterSupply;
         use crate::core::controls::time_control::OnOffTimeControl;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::external_conditions::ExternalConditions;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterCombi, CombiBoilerConfig,
         };
+        use crate::core::simulation_time::SimulationTime;
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
         use crate::core::water_heat_demand::misc::{WaterEventResult, WaterEventResultType};
-        use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
             BoilerHotWaterTest, BoilerType, CombiKeepHotFuel, CombiTypeSpecificDetails, FuelType,
             HeatSourceLocation, HeatSourceWetDetails, HotWaterSourceDetails,
@@ -2899,12 +2899,12 @@ mod tests {
     mod test_boiler_service_water_regular {
         use crate::core::controls::time_control::{RangeTimeControl, ScheduleOrSetpointControl};
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+        use crate::core::external_conditions::ExternalConditions;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterRegular,
         };
-        use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
@@ -3230,12 +3230,12 @@ mod tests {
     mod test_boiler_service_space {
         use crate::core::controls::time_control::{ControlSetPoint, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+        use crate::core::external_conditions::ExternalConditions;
         use crate::core::heating_systems::boiler::tests::external_conditions;
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceSpace,
         };
-        use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_ulps_eq;
         use parking_lot::RwLock;
@@ -3420,12 +3420,12 @@ mod tests {
             ControlSetPoint, RangeTimeControl, ScheduleOrSetpointControl, SetpointTimeControl,
         };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::external_conditions::ExternalConditions;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
         use crate::core::heating_systems::boiler::{CombiBoilerConfig, ServiceType};
+        use crate::core::simulation_time::SimulationTime;
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-        use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
             BoilerPilotLight, BoilerType, CombiKeepHotFuel, FuelType, HeatSourceLocation,
             HeatSourceWetDetails, HotWaterSourceDetails,

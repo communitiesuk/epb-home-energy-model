@@ -20,8 +20,8 @@ use crate::core::heating_systems::heat_pump::{
     HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceWater, HeatPumpWarmAir,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::output::OutputEmitters;
-use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail, Error};
 use arcstr::ArcStr;
 use serde_enum_str::Serialize_enum_str;

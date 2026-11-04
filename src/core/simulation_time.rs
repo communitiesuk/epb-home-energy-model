@@ -1,5 +1,5 @@
-use crate::bail;
 use crate::core::units::HOURS_PER_DAY;
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 

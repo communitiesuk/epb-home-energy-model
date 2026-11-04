@@ -1,14 +1,14 @@
 // This module provides structs to model time controls
 
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::schedule::validate_schedule_length;
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
-use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
     ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
     SmartApplianceBattery, MAIN_REFERENCE,
 };
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -2215,8 +2215,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::external_conditions::DaylightSavingsConfig;
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use crate::core::external_conditions::DaylightSavingsConfig;
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;
     use serde_json::json;
 
@@ -3027,9 +3027,9 @@ mod tests {
         use crate::core::controls::time_control::SmartApplianceControl;
         use crate::core::energy_supply::elec_battery::ElectricBattery;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-        use crate::hem_core::external_conditions::ExternalConditions;
+        use crate::core::external_conditions::ExternalConditions;
+        use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
         use crate::input::{BatteryLocation, FuelType, SmartApplianceBattery};
-        use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
         use approx::assert_relative_eq;
         use arcstr::ArcStr;
         use indexmap::{indexmap, IndexMap};

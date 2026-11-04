@@ -2,6 +2,7 @@
 // and to calculate the temperatures in the zone and associated building elements.
 use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::material_properties::AIR;
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::core::space_heat_demand::building_element::BuildingElement;
 use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
@@ -10,7 +11,6 @@ use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::TempInternalAirFn;
 use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -1909,6 +1909,9 @@ impl HeatBalanceAggregate {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::MockControl;
+    use crate::core::external_conditions::ShadingSegment;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::core::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
         BuildingElementGround, BuildingElementOpaque, BuildingElementPartyWall,
@@ -1918,13 +1921,10 @@ mod tests {
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
     use crate::core::units::{Orientation360, DAYS_IN_MONTH};
     use crate::corpus::CompletedVentilationLeaks;
-    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::hem_core::external_conditions::ShadingSegment;
     use crate::input::{
         FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType, TerrainClass,
         VentilationShieldClass, WindShieldLocation, WindowPart,
     };
-    use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;

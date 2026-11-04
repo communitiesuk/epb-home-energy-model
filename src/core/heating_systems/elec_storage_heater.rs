@@ -1,13 +1,13 @@
 use crate::core::controls::time_control::{ChargeControl, SetpointTimeControl};
+use crate::core::external_conditions::ExternalConditions;
 use crate::core::heating_systems::heat_battery_drycore::{
     convert_to_kwh, HeatBatteryDryCoreCommonBehaviour,
 };
 use crate::core::heating_systems::heat_battery_drycore::{HeatStorageDryCore, OutputMode};
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::{
     core::energy_supply::energy_supply::EnergySupplyConnection,
-    external_conditions::ExternalConditions,
     input::{ControlLogicType, ElectricStorageHeaterAirFlowType},
-    simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
 };
 use anyhow::bail;
 use approx::relative_eq;
@@ -436,14 +436,16 @@ impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
 mod tests {
     #![allow(clippy::excessive_precision)]
     use super::*;
+    use crate::core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::core::simulation_time::{
+        SimulationTime, SimulationTimeIteration, SimulationTimeIterator,
+    };
     use crate::{
         core::{
             controls::time_control::{ChargeControl, SetpointTimeControl},
             energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
         },
-        external_conditions::{DaylightSavingsConfig, ExternalConditions},
         input::{ControlLogicType, ExternalSensor, FuelType},
-        simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
     };
     use approx::assert_relative_eq;
     use parking_lot::RwLock;

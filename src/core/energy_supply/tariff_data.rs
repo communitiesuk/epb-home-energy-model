@@ -1,7 +1,7 @@
 use crate::core::schedule::{
     expand_numeric_schedule, reject_nulls, validate_schedule_length, NumericSchedule,
 };
-use crate::hem_core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::anyhow;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -130,7 +130,7 @@ impl TariffData {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyTariff;
-    use crate::hem_core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use rstest::*;
     use serde_json::json;
     use std::io::{BufReader, Cursor};

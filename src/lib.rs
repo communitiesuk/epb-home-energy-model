@@ -9,8 +9,6 @@ pub mod core;
 pub mod corpus;
 pub mod errors;
 
-pub mod hem_core;
-
 pub mod input;
 mod input_dependency_resolvers;
 pub mod output;
@@ -19,12 +17,13 @@ pub mod read_weather_file;
 pub mod statistics;
 
 use crate::core::energy_supply::tariff_data::TariffData;
+use crate::core::external_conditions::ExternalConditions;
+use crate::core::simulation_time::SimulationTime;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 use crate::corpus::{
     Corpus, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsPerTimestep,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
-use crate::external_conditions::ExternalConditions;
 use crate::input::{ExternalConditionsInput, HotWaterSourceDetails, Input};
 use crate::output::{Output, OutputEmitters, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
 use crate::output_writer::OutputWriter;
@@ -32,15 +31,12 @@ use crate::read_weather_file::{
     cibse_weather_data_to_external_conditions, epw_weather_data_to_external_conditions,
     ExternalConditions as ExternalConditionsFromFile, ReadWeatherFileResult,
 };
-use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use convert_case::{Case, Casing};
 use csv::{Terminator, WriterBuilder};
 use erased_serde::Serialize as ErasedSerialize;
-use hem_core::external_conditions;
-use hem_core::simulation_time;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{validator, Validator};

@@ -1,8 +1,8 @@
 use crate::core::controls::time_control::SetpointOrCombinationControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::corpus::TempInternalAirFn;
-use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use delegate::delegate;
 
@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-    use crate::hem_core::simulation_time::SimulationTime;
+    use crate::core::simulation_time::SimulationTime;
     use crate::input::FuelType;
     use approx::assert_relative_eq;
     use parking_lot::RwLock;

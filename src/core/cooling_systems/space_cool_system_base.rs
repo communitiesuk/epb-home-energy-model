@@ -1,4 +1,4 @@
-use crate::hem_core::simulation_time::SimulationTimeIteration;
+use crate::core::simulation_time::SimulationTimeIteration;
 
 pub(crate) trait SpaceCoolSystem {
     /// Return the temperature setpoint for the air conditioning system

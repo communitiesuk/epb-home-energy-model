@@ -6,6 +6,7 @@ use crate::core::controls::time_control::{Control, OnOffTimeControl, SetpointTim
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
+use crate::core::simulation_time::SimulationTimeIteration;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
     celsius_to_kelvin, Orientation360, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE,
@@ -20,7 +21,6 @@ use crate::input::{
     MechanicalVentilationDuctwork, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
     TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
-use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use approx::relative_eq;
@@ -3446,12 +3446,14 @@ mod tests {
     use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::external_conditions::{
+        DaylightSavingsConfig, ExternalConditions, ShadingSegment,
+    };
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
     use crate::core::space_heat_demand::ventilation::FacadeDirection::{
         Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
     };
-    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::{FuelType, SetpointBoundsInput};
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};

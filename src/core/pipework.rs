@@ -338,8 +338,8 @@ impl Pipeworkesque for Pipework {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::simulation_time::{SimulationTime, SimulationTimeIterator};
     use crate::core::units::WATTS_PER_KILOWATT;
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use rstest::*;
 
