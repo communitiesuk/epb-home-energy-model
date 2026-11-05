@@ -4015,7 +4015,7 @@ fn energy_supply_from_input(
             let tariff_data = match tariff_data {
                 Some(tariff_data) => Arc::unwrap_or_clone(tariff_data),
                 None => {
-                    let tariff_path = tariff_file_path.ok_or_else(|| anyhow!("A battery that can be charged from the grid is present but no tariff data source was provided"))?;
+                    let tariff_path = tariff_file_path.ok_or(BuildError::TariffDataNotProvided)?;
                     let tariff_file = Box::new(BufReader::new(
                         File::open(tariff_path)
                             .expect("Provided tariff file at provided path was not found"),
@@ -7740,6 +7740,8 @@ pub enum BuildError {
     BadColdWaterSourceReference(String),
     #[error("A reference to a zone entry '{0}' was found that is not in the zone input section.")]
     BadZoneReference(String),
+    #[error("A battery that can be charged from the grid is present but no tariff data has been made available to this HEM calculation.")]
+    TariffDataNotProvided,
 }
 
 impl From<CircularDependencyError> for BuildError {
