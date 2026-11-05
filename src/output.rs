@@ -38,8 +38,33 @@ pub struct OutputZoneData {
     pub internal_air_temp: IndexMap<ArcStr, Vec<f64>>,
     /// Space heat demand (unit: kWh)
     pub space_heat_demand: IndexMap<ArcStr, Vec<f64>>,
-    /// Space cool demand (unit: kWh)
+    /// Space cool demand, as a negative value (unit: kWh)
     pub space_cool_demand: IndexMap<ArcStr, Vec<f64>>,
+    /// Space heat demand still required to reach the heating setpoint once the output of every
+    /// heating and cooling system serving the zone has been applied. Counted only while a heating
+    /// system is in its required heating period, so setback and advanced start periods are excluded
+    /// (unit: kWh)
+    pub space_heat_demand_unmet: IndexMap<ArcStr, Vec<f64>>,
+    /// Space cool demand still required to reach the cooling setpoint once the output of every
+    /// heating and cooling system serving the zone has been applied, as a positive magnitude.
+    /// Counted only while a cooling system is in its required cooling period, so setback and
+    /// advanced start periods are excluded (unit: kWh)
+    pub space_cool_demand_unmet: IndexMap<ArcStr, Vec<f64>>,
+    /// Unmet space heat demand counted only where it rises from the previous timestep, so that a
+    /// shortfall lasting several timesteps is counted once rather than in each of them. This is a
+    /// lower bound on the energy needed to hold the setpoint: while a shortfall persists without
+    /// deepening, nothing is counted, though holding the setpoint would still call for energy in
+    /// each of those timesteps. space_heat_demand_unmet, and the _unmet_demand energy supply that
+    /// accumulates it, count such a shortfall again in every timestep it lasts (unit: kWh)
+    pub space_heat_demand_unmet_incremental: IndexMap<ArcStr, Vec<f64>>,
+    /// Unmet space cool demand counted only where it rises from the previous timestep, so that a
+    /// shortfall lasting several timesteps is counted once rather than in each of them, as a
+    /// positive magnitude. This is a lower bound on the energy needed to hold the setpoint: while
+    /// a shortfall persists without deepening, nothing is counted, though holding the setpoint
+    /// would still call for energy in each of those timesteps. space_cool_demand_unmet, and the
+    /// _unmet_demand energy supply that accumulates it, count such a shortfall again in every
+    /// timestep it lasts (unit: kWh)
+    pub space_cool_demand_unmet_incremental: IndexMap<ArcStr, Vec<f64>>,
 }
 
 impl OutputZoneData {
@@ -225,8 +250,18 @@ pub struct OutputEmitters {
 /// The raw HEM Core outputs, from Corpus::run()
 ///
 /// For the _unmet_demand energy supply object, end-uses are:
-///        - space heating or cooling per zone, where the naming convention is _unmet_demand: [zone name from input]
-///       - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]
+///   - space heating or cooling per zone, where the naming convention is _unmet_demand: [zone name from input]
+///   - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]
+///
+/// The per-zone end-use combines unmet heating and unmet cooling in one figure. The two are
+/// reported separately as the space_heat_demand_unmet and space_cool_demand_unmet fields of
+/// zone_data.
+///
+/// The _unmet_demand energy supply accumulates those per-timestep figures as they stand. A
+/// shortfall that persists is recorded again in every timestep it lasts, so the accumulated
+/// figure counts the same deficit repeatedly and grows as the simulation timestep shortens.
+/// The space_heat_demand_unmet_incremental and space_cool_demand_unmet_incremental fields of
+/// zone_data hold the same series with that repetition removed.
 ///
 /// For all other energy supplies, end-use names refer to specific systems or appliances specified in the input file.
 #[derive(Debug, Deserialize, Serialize)]
@@ -372,8 +407,15 @@ pub struct OutputSummary {
     pub total_floor_area: f64,
     /// Space heating demand total (unit: kWh)
     pub space_heat_demand_total: f64,
-    /// Space cooling demand total (unit: kWh)
+    /// Space cooling demand total, as a negative value (unit: kWh)
     pub space_cool_demand_total: f64,
+    /// Unmet space heating demand counted only where it rises between timesteps, total. A lower
+    /// bound on the energy needed to hold the heating setpoint (unit: kWh)
+    pub space_heat_demand_unmet_incremental_total: f64,
+    /// Unmet space cooling demand counted only where it rises between timesteps, total, as a
+    /// positive magnitude. A lower bound on the energy needed to hold the cooling setpoint
+    /// (unit: kWh)
+    pub space_cool_demand_unmet_incremental_total: f64,
     pub electricity_peak_consumption: OutputSummaryPeakElectricityConsumption,
     pub energy_supply: IndexMap<ArcStr, OutputSummaryEnergySupply>,
     /// Delivered energy summary, total energy per fuel and end-use (unit: kWh)
@@ -388,9 +430,22 @@ impl OutputSummary {
         self.space_heat_demand_total / self.total_floor_area
     }
 
-    /// Space cooling demand total per floor-area (unit: kWh/m²)
+    /// Space cooling demand total per floor-area, as a negative value (unit: kWh/m²)
     pub(crate) fn space_cool_demand_by_floor_area(&self) -> f64 {
         self.space_cool_demand_total / self.total_floor_area
+    }
+
+    /// Unmet space heating demand counted only where it rises between timesteps, per floor-area.
+    /// A lower bound on the energy needed to hold the heating setpoint (unit: kWh/m²)
+    pub(crate) fn space_heat_demand_unmet_incremental_total_by_floor_area(&self) -> f64 {
+        self.space_heat_demand_unmet_incremental_total / self.total_floor_area
+    }
+
+    /// Unmet space cooling demand counted only where it rises between timesteps, per floor-area,
+    /// as a positive magnitude. A lower bound on the energy needed to hold the cooling setpoint
+    /// (unit: kWh/m²)
+    pub(crate) fn space_cool_demand_unmet_incremental_total_by_floor_area(&self) -> f64 {
+        self.space_cool_demand_unmet_incremental_total / self.total_floor_area
     }
 
     pub(crate) fn delivered_energy_by_floor_area(&self) -> IndexMap<ArcStr, IndexMap<ArcStr, f64>> {
@@ -439,6 +494,8 @@ mod tests {
             total_floor_area: 0.0,
             space_heat_demand_total: 0.0,
             space_cool_demand_total: 0.0,
+            space_heat_demand_unmet_incremental_total: 0.0,
+            space_cool_demand_unmet_incremental_total: 0.0,
             electricity_peak_consumption: OutputSummaryPeakElectricityConsumption {
                 peak: 0.0,
                 index: 0,

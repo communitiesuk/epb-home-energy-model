@@ -84,7 +84,7 @@
     },
     "OutputCore": {
       "additionalProperties": false,
-      "description": "The raw HEM Core outputs, from Project.run()\n\nFor the _unmet_demand energy supply object, end-uses are:\n    - space heating or cooling per zone, where the naming convention is _unmet_demand: [zone name from input]\n    - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]\n\nFor all other energy supplies, end-use names refer to specific systems or appliances specified in the input file.",
+      "description": "The raw HEM Core outputs, from Project.run()\n\nFor the _unmet_demand energy supply object, end-uses are:\n    - space heating or cooling per zone, where the naming convention is _unmet_demand: [zone name from input]\n    - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]\n\nThe per-zone end-use combines unmet heating and unmet cooling in one figure. The two are\nreported separately as the space_heat_demand_unmet and space_cool_demand_unmet fields of\nzone_data.\n\nThe _unmet_demand energy supply accumulates those per-timestep figures as they stand. A\nshortfall that persists is recorded again in every timestep it lasts, so the accumulated\nfigure counts the same deficit repeatedly and grows as the simulation timestep shortens.\nThe space_heat_demand_unmet_incremental and space_cool_demand_unmet_incremental fields of\nzone_data hold the same series with that repetition removed.\n\nFor all other energy supplies, end-use names refer to specific systems or appliances specified in the input file.",
       "properties": {
         "timestep_array": {
           "description": "The list of timesteps, serves as an index for the other outputs (unit: Hours)",
@@ -801,13 +801,13 @@
           "type": "number"
         },
         "temperature_air_internal": {
-          "description": "Internal air temperature (unit: \u02daC)",
+          "description": "Internal air temperature (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Temperature Air Internal",
           "type": "number"
         },
         "temperature_air_external": {
-          "description": "External air temperature (unit: \u02daC)",
+          "description": "External air temperature (unit: \u00b0C)",
           "title": "Temperature Air External",
           "type": "number"
         }
@@ -839,8 +839,18 @@
           "type": "number"
         },
         "space_cool_demand_total": {
-          "description": "Space cooling demand total (unit: kWh)",
+          "description": "Space cooling demand total, as a negative value (unit: kWh)",
           "title": "Space Cool Demand Total",
+          "type": "number"
+        },
+        "space_heat_demand_unmet_incremental_total": {
+          "description": "Unmet space heating demand counted only where it rises between timesteps, total. A lower bound on the energy needed to hold the heating setpoint (unit: kWh)",
+          "title": "Space Heat Demand Unmet Incremental Total",
+          "type": "number"
+        },
+        "space_cool_demand_unmet_incremental_total": {
+          "description": "Unmet space cooling demand counted only where it rises between timesteps, total, as a positive magnitude. A lower bound on the energy needed to hold the cooling setpoint (unit: kWh)",
+          "title": "Space Cool Demand Unmet Incremental Total",
           "type": "number"
         },
         "electricity_peak_consumption": {
@@ -889,6 +899,8 @@
         "total_floor_area",
         "space_heat_demand_total",
         "space_cool_demand_total",
+        "space_heat_demand_unmet_incremental_total",
+        "space_cool_demand_unmet_incremental_total",
         "electricity_peak_consumption",
         "energy_supply",
         "delivered_energy",
@@ -1088,7 +1100,7 @@
             },
             "type": "array"
           },
-          "description": "Operative temperature (unit: \u02daC)",
+          "description": "Operative temperature (unit: \u00b0C)",
           "propertyNames": {
             "description": "Zone key"
           },
@@ -1102,7 +1114,7 @@
             },
             "type": "array"
           },
-          "description": "Internal air temperature (unit: \u02daC)",
+          "description": "Internal air temperature (unit: \u00b0C)",
           "propertyNames": {
             "description": "Zone key"
           },
@@ -1130,11 +1142,67 @@
             },
             "type": "array"
           },
-          "description": "Space cool demand (unit: kWh)",
+          "description": "Space cool demand, as a negative value (unit: kWh)",
           "propertyNames": {
             "description": "Zone key"
           },
           "title": "Space Cool Demand",
+          "type": "object"
+        },
+        "space_heat_demand_unmet": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Space heat demand still required to reach the heating setpoint once the output of every heating and cooling system serving the zone has been applied. Counted only while a heating system is in its required heating period, so setback and advanced start periods are excluded (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Heat Demand Unmet",
+          "type": "object"
+        },
+        "space_cool_demand_unmet": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Space cool demand still required to reach the cooling setpoint once the output of every heating and cooling system serving the zone has been applied, as a positive magnitude. Counted only while a cooling system is in its required cooling period, so setback and advanced start periods are excluded (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Cool Demand Unmet",
+          "type": "object"
+        },
+        "space_heat_demand_unmet_incremental": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Unmet space heat demand counted only where it rises from the previous timestep, so that a shortfall lasting several timesteps is counted once rather than in each of them. This is a lower bound on the energy needed to hold the setpoint: while a shortfall persists without deepening, nothing is counted, though holding the setpoint would still call for energy in each of those timesteps. space_heat_demand_unmet, and the _unmet_demand energy supply that accumulates it, count such a shortfall again in every timestep it lasts (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Heat Demand Unmet Incremental",
+          "type": "object"
+        },
+        "space_cool_demand_unmet_incremental": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Unmet space cool demand counted only where it rises from the previous timestep, so that a shortfall lasting several timesteps is counted once rather than in each of them, as a positive magnitude. This is a lower bound on the energy needed to hold the setpoint: while a shortfall persists without deepening, nothing is counted, though holding the setpoint would still call for energy in each of those timesteps. space_cool_demand_unmet, and the _unmet_demand energy supply that accumulates it, count such a shortfall again in every timestep it lasts (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Cool Demand Unmet Incremental",
           "type": "object"
         }
       },
@@ -1144,7 +1212,11 @@
         "operative_temp",
         "internal_air_temp",
         "space_heat_demand",
-        "space_cool_demand"
+        "space_cool_demand",
+        "space_heat_demand_unmet",
+        "space_cool_demand_unmet",
+        "space_heat_demand_unmet_incremental",
+        "space_cool_demand_unmet_incremental"
       ],
       "title": "OutputZoneData",
       "type": "object"

@@ -52,11 +52,12 @@ pub(crate) struct ShadingObject {
     #[serde(rename = "type")]
     pub(crate) object_type: ShadingObjectType,
 
-    /// Height of the shading object. (Unit: m)
+    /// Height of the top of an obstacle, or of the underside of an overhang, measured from the same
+    /// ground level that the base_height of the shaded element is measured from. (Unit: m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) height: f64,
 
-    /// Distance of the shading object from the building. (Unit: m)
+    /// Horizontal distance from the shaded element to the shading object. (Unit: m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) distance: f64,
 }
@@ -66,11 +67,12 @@ pub(crate) struct ShadingObject {
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
 pub enum WindowShadingObject {
     Obstacle {
-        /// (unit: m)
+        /// Height of the top of the obstacle, measured from the same ground level that the
+        /// base_height of the shaded element is measured from. (unit: m)
         #[validate(exclusive_minimum = 0.)]
         height: f64,
 
-        /// (unit: m)
+        /// Horizontal distance from the shaded element to the obstacle. (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,
 

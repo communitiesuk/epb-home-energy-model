@@ -622,6 +622,16 @@
       "title": "ApplianceLoadShifting",
       "type": "object"
     },
+    "BackDraughtProtection": {
+      "description": "Type of back-draught protection fitted to an extract fan.\n\nDetermines how much air passes through the fan while it is stopped, which\ndepends far more on the type of back-draught device than on the fan itself.",
+      "enum": [
+        "internal damper",
+        "external terminal",
+        "none"
+      ],
+      "title": "BackDraughtProtection",
+      "type": "string"
+    },
     "Bath": {
       "additionalProperties": false,
       "properties": {
@@ -781,7 +791,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -851,7 +861,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -928,7 +938,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1031,7 +1041,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1149,7 +1159,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1238,7 +1248,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1393,7 +1403,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1542,7 +1552,7 @@
           "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1747,7 +1757,7 @@
           "type": "number"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -1902,9 +1912,9 @@
           "type": "number"
         },
         "temperatures": {
-          "description": "List of cold water temperatures, one entry per hour (unit: \u02daC)",
+          "description": "List of cold water temperatures, one entry per hour (unit: \u00b0C)",
           "items": {
-            "description": "Running water temperature 0-100 (unit: \u02daC)",
+            "description": "Running water temperature 0-100 (unit: \u00b0C)",
             "maximum": 100,
             "minimum": 0,
             "type": "number"
@@ -2011,7 +2021,7 @@
         "temp_charge_cut": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -2033,7 +2043,7 @@
             }
           ],
           "default": null,
-          "description": "Temperature delta schedule for charge cut-off adjustment (unit: \u02daC)"
+          "description": "Temperature delta schedule for charge cut-off adjustment (unit: \u00b0C)"
         },
         "charge_calc_time": {
           "default": 21,
@@ -2421,7 +2431,7 @@
         "max_outdoor_temp": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -2450,7 +2460,7 @@
         "min_outdoor_temp": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -2545,7 +2555,7 @@
       "additionalProperties": false,
       "properties": {
         "battery_age": {
-          "description": "The starting age of the battery (in years)",
+          "description": "The starting age of the battery (in years). State of health declines linearly with age; an age old enough to take state of health to zero leaves the battery with no usable capacity and unable to charge or discharge.",
           "minimum": 0,
           "title": "Battery Age",
           "type": "number"
@@ -2561,7 +2571,7 @@
           "type": "number"
         },
         "charge_discharge_efficiency_round_trip": {
-          "description": "Charge/discharge round trip efficiency of battery system (greater than 0, up to 1)",
+          "description": "Charge/discharge round-trip efficiency of the battery system at the AC system level, measured at the household electricity meter (consistent with IEC 62933-2-1). Must include all conversion losses including power electronics (rectifier and inverter). DC terminal efficiency figures (e.g. IEC 61427-2) are not suitable \u2014 they exclude power electronics losses of approximately 5-10 percentage points. (greater than 0, up to 1)",
           "exclusiveMinimum": 0,
           "maximum": 1,
           "title": "Charge Discharge Efficiency Round Trip",
@@ -2841,7 +2851,7 @@
           "anyOf": [
             {
               "items": {
-                "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+                "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
                 "minimum": -273.15,
                 "type": "number"
               },
@@ -2852,7 +2862,7 @@
             }
           ],
           "default": null,
-          "description": "List of external air temperatures, one entry per hour (unit: \u02daC)",
+          "description": "List of external air temperatures, one entry per hour (unit: \u00b0C)",
           "title": "Air Temperatures"
         },
         "diffuse_horizontal_radiation": {
@@ -2914,7 +2924,7 @@
             }
           ],
           "default": null,
-          "description": "Latitude of weather station, angle from south (unit: \u02da)",
+          "description": "Latitude of weather station, angle from south (unit: \u00b0)",
           "title": "Latitude"
         },
         "longitude": {
@@ -2929,7 +2939,7 @@
             }
           ],
           "default": null,
-          "description": "Longitude of weather station, easterly +ve westerly -ve (unit: \u02da)",
+          "description": "Longitude of weather station, easterly +ve westerly -ve (unit: \u00b0)",
           "title": "Longitude"
         },
         "shading_segments": {
@@ -2945,7 +2955,7 @@
             }
           ],
           "default": null,
-          "description": "Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building",
+          "description": "Data splitting the ground plane into segments (8-36), each giving the type, height above ground level and horizontal distance of the shading objects it contains",
           "title": "Shading Segments"
         },
         "solar_reflectivity_of_ground": {
@@ -2971,7 +2981,7 @@
           "anyOf": [
             {
               "items": {
-                "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+                "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
                 "maximum": 360,
                 "minimum": 0,
                 "type": "number"
@@ -2983,7 +2993,7 @@
             }
           ],
           "default": null,
-          "description": "List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: \u02da)",
+          "description": "List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: \u00b0)",
           "title": "Wind Directions"
         },
         "wind_speeds": {
@@ -3047,6 +3057,15 @@
       ],
       "title": "ExternalSensorCorrelation",
       "type": "object"
+    },
+    "ExtractFanDiameter": {
+      "description": "Nominal diameter of an extract fan's air path.\n\nRestricted to the two sizes for which stopped-fan leakage has been measured.",
+      "enum": [
+        "100 mm",
+        "150 mm"
+      ],
+      "title": "ExtractFanDiameter",
+      "type": "string"
     },
     "FanSpeedData": {
       "additionalProperties": false,
@@ -3253,16 +3272,16 @@
           "description": "Location of the boiler (internal or external to the building)"
         },
         "efficiency_full_load": {
-          "description": "Boiler net efficiency at full load (dimensionless, 0-1)",
+          "description": "Boiler efficiency at full load, on a gross calorific value basis (dimensionless, greater than 0 and no more than 1). Bounded at 1 rather than given the part-load tolerance, because published full-load figures sit well below the ceiling; the tighter bound also catches a full-load and part-load pair entered the wrong way round.",
           "exclusiveMinimum": 0,
           "maximum": 1,
           "title": "Efficiency Full Load",
           "type": "number"
         },
         "efficiency_part_load": {
-          "description": "Boiler net efficiency at part load (dimensionless, 0-1.12). Net efficiencies may exceed 1 in test data.",
+          "description": "Boiler efficiency at part load, on a gross calorific value basis (dimensionless, greater than 0 and no more than 1.03). Efficiency on a gross basis cannot physically exceed 1, because the gross calorific value accounts for the latent heat of the water vapour in the flue gas. A figure converted from net-basis test data can still land marginally above 1 through test tolerance and rounding, so a small margin is accepted. Enter the published figure rather than clipping it to 1: the high value correction caps the corrected efficiency at a fuel-dependent ceiling reached at or just above a gross efficiency of 1, so a figure above 1 raises the modelled efficiency by less than 0.001 and not at all beyond that point.",
           "exclusiveMinimum": 0,
-          "maximum": 1.12,
+          "maximum": 1.03,
           "title": "Efficiency Part Load",
           "type": "number"
         },
@@ -3817,16 +3836,16 @@
           "description": "Location of the boiler (internal or external to the building)"
         },
         "efficiency_full_load": {
-          "description": "Boiler net efficiency at full load (dimensionless, 0-1)",
+          "description": "Boiler efficiency at full load, on a gross calorific value basis (dimensionless, greater than 0 and no more than 1). Bounded at 1 rather than given the part-load tolerance, because published full-load figures sit well below the ceiling; the tighter bound also catches a full-load and part-load pair entered the wrong way round.",
           "exclusiveMinimum": 0,
           "maximum": 1,
           "title": "Efficiency Full Load",
           "type": "number"
         },
         "efficiency_part_load": {
-          "description": "Boiler net efficiency at part load (dimensionless, 0-1.12). Net efficiencies may exceed 1 in test data.",
+          "description": "Boiler efficiency at part load, on a gross calorific value basis (dimensionless, greater than 0 and no more than 1.03). Efficiency on a gross basis cannot physically exceed 1, because the gross calorific value accounts for the latent heat of the water vapour in the flue gas. A figure converted from net-basis test data can still land marginally above 1 through test tolerance and rounding, so a small margin is accepted. Enter the published figure rather than clipping it to 1: the high value correction caps the corrected efficiency at a fuel-dependent ceiling reached at or just above a gross efficiency of 1, so a figure above 1 raises the modelled efficiency by less than 0.001 and not at all beyond that point.",
           "exclusiveMinimum": 0,
-          "maximum": 1.12,
+          "maximum": 1.03,
           "title": "Efficiency Part Load",
           "type": "number"
         },
@@ -4165,7 +4184,7 @@
           "type": "number"
         },
         "max_temperature": {
-          "description": "Maximum operating temperature (unit: \u02daC)",
+          "description": "Maximum operating temperature (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Max Temperature",
           "type": "number"
@@ -4177,13 +4196,13 @@
           "type": "integer"
         },
         "phase_transition_temperature_upper": {
-          "description": "Upper temperature limit for phase transition (unit: \u02daC)",
+          "description": "Upper temperature limit for phase transition (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Phase Transition Temperature Upper",
           "type": "number"
         },
         "phase_transition_temperature_lower": {
-          "description": "Lower temperature limit for phase transition (unit: \u02daC)",
+          "description": "Lower temperature limit for phase transition (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Phase Transition Temperature Lower",
           "type": "number"
@@ -4200,7 +4219,7 @@
           "type": "number"
         },
         "temp_init": {
-          "description": "Initial temperature of the PCM heat battery at the start of simulation (unit: \u02daC)",
+          "description": "Initial temperature of the PCM heat battery at the start of simulation (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Temp Init",
           "type": "number"
@@ -4265,7 +4284,7 @@
         "temp_min_useful": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -4393,7 +4412,7 @@
         "eahp_mixed_max_temp": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -4402,13 +4421,13 @@
             }
           ],
           "default": null,
-          "description": "Maximum temperature for exhaust air heat pump mixed operation (unit: \u02daC)",
+          "description": "Maximum temperature for exhaust air heat pump mixed operation (unit: \u00b0C)",
           "title": "EAHP Mixed Max Temperature"
         },
         "eahp_mixed_min_temp": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
               "minimum": -273.15,
               "type": "number"
             },
@@ -4417,7 +4436,7 @@
             }
           ],
           "default": null,
-          "description": "Minimum temperature for exhaust air heat pump mixed operation (unit: \u02daC)",
+          "description": "Minimum temperature for exhaust air heat pump mixed operation (unit: \u00b0C)",
           "title": "EAHP Mixed Min Temperature"
         },
         "min_modulation_rate_20": {
@@ -4554,11 +4573,11 @@
             }
           ],
           "default": null,
-          "description": "Distribution temperature for heat network (unit: \u02daC)",
+          "description": "Distribution temperature for heat network (unit: \u00b0C)",
           "title": "Temp Distribution Heat Network"
         },
         "temp_lower_operating_limit": {
-          "description": "Lower temperature limit for heat pump operation (unit: \u02daC)",
+          "description": "Lower temperature limit for heat pump operation (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Temp Lower Operating Limit",
           "type": "number"
@@ -4574,7 +4593,7 @@
             }
           ],
           "default": null,
-          "description": "Maximum return feed temperature (unit: \u02daC)",
+          "description": "Maximum return feed temperature (unit: \u00b0C)",
           "title": "Temp Return Feed Max"
         },
         "test_data_EN14825": {
@@ -4920,7 +4939,7 @@
           "description": "Type of separate domestic hot water test performed on the combi boiler (M&L, M&S, M_only, or No_additional_tests)"
         },
         "setpoint_temp": {
-          "description": "Temperature setpoint for the combi boiler hot water output (unit: \u02daC)",
+          "description": "Temperature setpoint for the combi boiler hot water output (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Setpoint Temp",
@@ -5068,7 +5087,7 @@
         "setpoint_temp": {
           "anyOf": [
             {
-              "description": "Running water temperature 0-100 (unit: \u02daC)",
+              "description": "Running water temperature 0-100 (unit: \u00b0C)",
               "maximum": 100,
               "minimum": 0,
               "type": "number"
@@ -5078,7 +5097,7 @@
             }
           ],
           "default": null,
-          "description": "Temperature setpoint for the HIU hot water output (unit: \u02daC)",
+          "description": "Temperature setpoint for the HIU hot water output (unit: \u00b0C)",
           "title": "Setpoint Temp"
         }
       },
@@ -5115,7 +5134,7 @@
           "type": "string"
         },
         "setpoint_temp": {
-          "description": "Temperature setpoint for the heat battery hot water output (unit: \u02daC)",
+          "description": "Temperature setpoint for the heat battery hot water output (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Setpoint Temp",
@@ -5163,7 +5182,7 @@
           "type": "integer"
         },
         "setpoint_temp": {
-          "description": "Temperature setpoint for the point-of-use water heater output (unit: \u02daC)",
+          "description": "Temperature setpoint for the point-of-use water heater output (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Setpoint Temp",
@@ -5254,7 +5273,7 @@
           "title": "Heat Exchanger Surface Area"
         },
         "init_temp": {
-          "description": "Initial temperature of the smart hot water tank at the start of simulation (unit: \u02daC)",
+          "description": "Initial temperature of the smart hot water tank at the start of simulation (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Init Temp",
@@ -5294,7 +5313,7 @@
           "type": "string"
         },
         "temp_usable": {
-          "description": "Temperature below which water is considered unusable (unit: \u02daC)",
+          "description": "Temperature below which water is considered unusable (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Temp Usable",
@@ -5827,6 +5846,18 @@
           "$ref": "#/$defs/MechVentType",
           "description": "Ventilation system type"
         },
+        "leakage_when_stopped": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MechanicalVentilationLeakageWhenStopped"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Air leakage through an intermittent extract fan while it is stopped. Required for an intermittent MEV system and accepted for no other, since a continuously running fan is never stopped"
+        },
         "position_intake": {
           "anyOf": [
             {
@@ -5868,7 +5899,7 @@
         "orientation360": {
           "anyOf": [
             {
-              "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+              "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
               "maximum": 360,
               "minimum": 0,
               "type": "number"
@@ -5884,7 +5915,7 @@
         "pitch": {
           "anyOf": [
             {
-              "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+              "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
               "maximum": 180,
               "minimum": 0,
               "type": "number"
@@ -5925,7 +5956,7 @@
             }
           ],
           "default": null,
-          "description": "Cross-sectional perimeter length of rectangular ductwork (unit: mm)",
+          "description": "Internal cross-sectional perimeter length of rectangular ductwork (unit: mm)",
           "title": "Duct Perimeter"
         },
         "duct_type": {
@@ -5993,19 +6024,39 @@
       "title": "MechanicalVentilationDuctwork",
       "type": "object"
     },
+    "MechanicalVentilationLeakageWhenStopped": {
+      "additionalProperties": false,
+      "description": "Properties determining how much air passes through an extract fan while stopped",
+      "properties": {
+        "back_draught_protection": {
+          "$ref": "#/$defs/BackDraughtProtection",
+          "description": "Type of back-draught protection fitted, observed at the fan: a damper on the fan body, a flap or cowl at the outside terminal, or none. Where a fan has both, enter the damper, which governs the leakage"
+        },
+        "diameter": {
+          "$ref": "#/$defs/ExtractFanDiameter",
+          "description": "Nominal diameter of the fan's air path, taken from the product data or measured on site. Only the two sizes for which leakage has been measured can be given; enter the nearer of them for a fan of any other size"
+        }
+      },
+      "required": [
+        "back_draught_protection",
+        "diameter"
+      ],
+      "title": "MechanicalVentilationLeakageWhenStopped",
+      "type": "object"
+    },
     "MechanicalVentilationPosition": {
       "additionalProperties": false,
       "description": "Position data for mechanical ventilation intake/exhaust points",
       "properties": {
         "orientation360": {
-          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
           "maximum": 360,
           "minimum": 0,
           "title": "Orientation360",
           "type": "number"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -6122,14 +6173,14 @@
           "$ref": "#/$defs/PhotovoltaicVentilationStrategy"
         },
         "pitch": {
-          "description": "The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: \u02da)",
+          "description": "The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: \u00b0)",
           "maximum": 90,
           "minimum": 0,
           "title": "Pitch",
           "type": "number"
         },
         "orientation360": {
-          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
           "maximum": 360,
           "minimum": 0,
           "title": "Orientation360",
@@ -6250,14 +6301,14 @@
           "$ref": "#/$defs/PhotovoltaicVentilationStrategy"
         },
         "pitch": {
-          "description": "The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: \u02da)",
+          "description": "The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: \u00b0)",
           "maximum": 90,
           "minimum": 0,
           "title": "Pitch",
           "type": "number"
         },
         "orientation360": {
-          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
           "maximum": 360,
           "minimum": 0,
           "title": "Orientation360",
@@ -6381,7 +6432,7 @@
     "ScheduleEntryForDegreesCelsius": {
       "anyOf": [
         {
-          "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+          "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
           "minimum": -273.15,
           "type": "number"
         },
@@ -6462,7 +6513,7 @@
     "ScheduleRepeaterEntryForDegreesCelsius": {
       "anyOf": [
         {
-          "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+          "description": "Temperature measurement in degrees Celsius (unit: \u00b0C)",
           "minimum": -273.15,
           "type": "number"
         },
@@ -6592,13 +6643,13 @@
       "additionalProperties": false,
       "properties": {
         "distance": {
-          "description": "Distance of the shading object from the building. (Unit: m)",
+          "description": "Horizontal distance from the shaded element to the shading object. (Unit: m)",
           "exclusiveMinimum": 0,
           "title": "Distance",
           "type": "number"
         },
         "height": {
-          "description": "Height of the shading object. (Unit: m)",
+          "description": "Height of the top of an obstacle, or of the underside of an overhang, measured from the same ground level that the base_height of the shaded element is measured from. (Unit: m)",
           "exclusiveMinimum": 0,
           "title": "Height",
           "type": "number"
@@ -7024,7 +7075,7 @@
           "type": "integer"
         },
         "orientation360": {
-          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
           "maximum": 360,
           "minimum": 0,
           "title": "Orientation360",
@@ -7619,7 +7670,7 @@
           "title": "Design Flow Rate"
         },
         "design_flow_temp": {
-          "description": "Design flow temperature. (Unit: \u02daC)",
+          "description": "Design flow temperature. (Unit: \u00b0C)",
           "exclusiveMinimum": 0,
           "title": "Design Flow Temp",
           "type": "number"
@@ -7832,7 +7883,7 @@
           "title": "Heat Exchanger Surface Area"
         },
         "init_temp": {
-          "description": "Initial temperature of the storage tank at the start of simulation (unit: \u02daC)",
+          "description": "Initial temperature of the storage tank at the start of simulation (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Init Temp",
@@ -8013,14 +8064,14 @@
           "type": "number"
         },
         "orientation360": {
-          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u00b0)",
           "maximum": 360,
           "minimum": 0,
           "title": "Orientation360",
           "type": "number"
         },
         "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u00b0)",
           "maximum": 180,
           "minimum": 0,
           "title": "Pitch",
@@ -8274,7 +8325,7 @@
           "type": "number"
         },
         "temperature": {
-          "description": "Target temperature for the water heating event (unit: \u02daC)",
+          "description": "Target temperature for the water heating event (unit: \u00b0C)",
           "maximum": 100,
           "minimum": 0,
           "title": "Temperature",
@@ -8737,13 +8788,13 @@
           "type": "string"
         },
         "height": {
-          "description": "(unit: m)",
+          "description": "Height of the top of the obstacle, measured from the same ground level that the base_height of the shaded element is measured from. (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Height",
           "type": "number"
         },
         "distance": {
-          "description": "(unit: m)",
+          "description": "Horizontal distance from the shaded element to the obstacle. (unit: m)",
           "minimum": 0,
           "title": "Distance",
           "type": "number"
@@ -8841,7 +8892,7 @@
             }
           ],
           "default": null,
-          "description": "A boolean describing the state of the window treatment",
+          "description": "Whether the window treatment is open at the start of the simulation; its controls change it thereafter. A treatment that omits this starts closed.",
           "title": "Is Open"
         },
         "opening_delay_hrs": {
@@ -8999,6 +9050,7 @@
               "items": {
                 "type": "string"
               },
+              "minItems": 1,
               "type": "array",
               "uniqueItems": true
             },
@@ -9019,6 +9071,7 @@
               "items": {
                 "type": "string"
               },
+              "minItems": 1,
               "type": "array",
               "uniqueItems": true
             },
@@ -9078,7 +9131,7 @@
           "description": "Basis for zone temperature control."
         },
         "temp_setpnt_init": {
-          "description": "Setpoint temperature to use during initialisation (unit: \u02daC)",
+          "description": "Setpoint temperature to use during initialisation (unit: \u00b0C)",
           "minimum": -273.15,
           "title": "Temp Setpnt Init",
           "type": "number"

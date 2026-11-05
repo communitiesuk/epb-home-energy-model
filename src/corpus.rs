@@ -3290,6 +3290,10 @@ impl Corpus {
             internal_air_temp: internal_air_temp_dict,
             space_heat_demand: space_heat_demand_dict,
             space_cool_demand: space_cool_demand_dict,
+            space_heat_demand_unmet: Default::default(), // TODO 1.0.0a10 get actual values
+            space_cool_demand_unmet: Default::default(), // TODO 1.0.0a10 get actual values
+            space_heat_demand_unmet_incremental: Default::default(), // TODO 1.0.0a10 get actual values
+            space_cool_demand_unmet_incremental: Default::default(), // TODO 1.0.0a10 get actual values
         };
 
         let output_core = OutputCore {
@@ -3718,6 +3722,8 @@ impl Corpus {
             total_floor_area: self.total_floor_area,
             space_heat_demand_total,
             space_cool_demand_total,
+            space_heat_demand_unmet_incremental_total: Default::default(), // TODO 1.0.0a10 plug in real values
+            space_cool_demand_unmet_incremental_total: Default::default(), // TODO 1.0.0a10 plug in real values
             electricity_peak_consumption: self.calculate_peak_electricity_consumption(output_core),
             energy_supply: energy_supply_stats,
             delivered_energy: delivered_energy_dict,

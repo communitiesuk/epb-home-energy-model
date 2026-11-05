@@ -899,7 +899,8 @@ pub struct ExternalConditionsInput {
     #[validate(maximum = 180.)]
     pub(crate) longitude: Option<f64>,
 
-    /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
+    /// Data splitting the ground plane into segments (8-36), each giving the type, height above
+    /// ground level and horizontal distance of the shading objects it contains
     #[validate]
     pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
 
@@ -1518,12 +1519,18 @@ pub struct ElectricBattery {
     #[validate(exclusive_minimum = 0.)]
     pub capacity: f64,
 
-    /// Charge/discharge round trip efficiency of battery system (greater than 0, up to 1)
+    /// Charge/discharge round-trip efficiency of the battery system at the AC system level,
+    /// measured at the household electricity meter (consistent with IEC 62933-2-1). Must include
+    /// all conversion losses including power electronics (rectifier and inverter). DC terminal
+    /// efficiency figures (e.g. IEC 61427-2) are not suitable — they exclude power electronics
+    /// losses of approximately 5-10 percentage points. (greater than 0, up to 1)
     #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     pub charge_discharge_efficiency_round_trip: f64,
 
-    /// The starting age of the battery (in years)
+    /// The starting age of the battery (in years). State of health declines linearly with age;
+    /// an age old enough to take state of health to zero leaves the battery with no usable capacity
+    /// and unable to charge or discharge.
     #[validate(minimum = 0.)]
     pub battery_age: f64,
 
@@ -4006,7 +4013,11 @@ fn validate_system_list_no_duplicates(
 pub(crate) enum SystemReference {
     None(()),
     Single(ArcStr),
-    Multiple(#[validate(unique_items)] Vec<ArcStr>),
+    Multiple(
+        #[validate(unique_items)]
+        #[validate(min_items = 1)]
+        Vec<ArcStr>,
+    ),
 }
 
 impl SystemReference {
@@ -4772,7 +4783,8 @@ pub struct WindowTreatment {
     #[serde(rename = "Control_open")]
     pub(crate) control_open: Option<ArcStr>,
 
-    /// A boolean describing the state of the window treatment
+    /// Whether the window treatment is open at the start of the simulation; its controls change
+    /// it thereafter. A treatment that omits this starts closed.
     #[serde(default)]
     pub(crate) is_open: Option<bool>,
 
@@ -5164,14 +5176,25 @@ pub enum HeatSourceWetDetails {
         #[validate(exclusive_minimum = 0.)]
         rated_power: f64,
 
-        /// Boiler efficiency at full load (dimensionless, 0-1)
+        /// Boiler efficiency at full load, on a gross calorific value basis (dimensionless, greater
+        /// than 0 and no more than 1). Bounded at 1 rather than given the part-load tolerance,
+        /// because published full-load figures sit well below the ceiling; the tighter bound also
+        /// catches a full-load and part-load pair entered the wrong way round.
         #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 1.)]
         efficiency_full_load: f64,
 
-        /// Boiler efficiency at part load (dimensionless, 0-1)
+        /// Boiler efficiency at part load, on a gross calorific value basis (dimensionless, greater
+        /// than 0 and no more than 1.03). Efficiency on a gross basis cannot physically exceed 1,
+        /// because the gross calorific value accounts for the latent heat of the water vapour in
+        /// the flue gas. A figure converted from net-basis test data can still land marginally
+        /// above 1 through test tolerance and rounding, so a small margin is accepted. Enter the
+        /// published figure rather than clipping it to 1: the high value correction caps the
+        /// corrected efficiency at a fuel-dependent ceiling reached at or just above a gross
+        /// efficiency of 1, so a figure above 1 raises the modelled efficiency by less than 0.001
+        /// and not at all beyond that point.
         #[validate(exclusive_minimum = 0.)]
-        #[validate(maximum = 1.12)]
+        #[validate(maximum = 1.03)]
         efficiency_part_load: f64,
 
         /// Location of the boiler (internal or external to the building)
@@ -6338,6 +6361,12 @@ pub enum MechVentData {
     IntermittentMev {
         #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
         position_exhaust: MechanicalVentilationPosition,
+
+        /// Air leakage through an intermittent extract fan while it is stopped.
+        /// Required for an intermittent MEV system and accepted for no other, since a continuously
+        /// running fan is never stopped
+        #[validate]
+        leakage_when_stopped: MechanicalVentilationLeakageWhenStopped,
     },
     #[serde(rename = "Centralised continuous MEV")]
     CentralisedContinuousMev {
@@ -6474,6 +6503,56 @@ pub struct MechanicalVentilationPosition {
     /// Mid height of air flow path relative to ventilation zone (unit: m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) mid_height_air_flow_path: f64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[validate(custom = validate_measured_combination)]
+pub struct MechanicalVentilationLeakageWhenStopped {
+    /// Type of back-draught protection fitted, observed at the fan: a damper on the fan body,
+    /// a flap or cowl at the outside terminal, or none. Where a fan has both, enter the damper,
+    /// which governs the leakage
+    back_draught_protection: BackDraughtProtection,
+
+    /// Nominal diameter of the fan's air path, taken from the product data or measured on site.
+    /// Only the two sizes for which leakage has been measured can be given; enter the nearer of
+    /// them for a fan of any other size
+    diameter: ExtractFanDiameter,
+}
+
+fn validate_measured_combination(
+    leakage: &MechanicalVentilationLeakageWhenStopped,
+) -> Result<(), serde_valid::validation::Error> {
+    match leakage {
+        MechanicalVentilationLeakageWhenStopped {
+            back_draught_protection: BackDraughtProtection::None,
+            diameter: ExtractFanDiameter::Diameter150mm,
+        } => Err(serde_valid::validation::Error::Custom(format!(
+            "No stopped-fan leakage data exists for a {} fan with back_draught_protection '{}'",
+            leakage.diameter, leakage.back_draught_protection
+        ))),
+        _ => Ok(()),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub enum BackDraughtProtection {
+    #[serde(rename = "internal damper")]
+    InternalDamper,
+    #[serde(rename = "external terminal")]
+    ExternalTerminal,
+    #[serde(rename = "none")]
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub enum ExtractFanDiameter {
+    #[serde(rename = "100 mm")]
+    Diameter100mm,
+    #[serde(rename = "150 mm")]
+    Diameter150mm,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
