@@ -196531,6 +196531,10 @@
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": "Intermittent MEV",
+                "leakage_when_stopped": {
+                    "back_draught_protection": "external terminal",
+                    "diameter": "100 mm"
+                },
                 "mid_height_air_flow_path": 2.0,
                 "orientation360": 180.0,
                 "pitch": 90.0
@@ -196543,6 +196547,10 @@
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": "Intermittent MEV",
+                "leakage_when_stopped": {
+                    "back_draught_protection": "none",
+                    "diameter": "100 mm"
+                },
                 "mid_height_air_flow_path": 2.0,
                 "orientation360": 180.0,
                 "pitch": 90.0

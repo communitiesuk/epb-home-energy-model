@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a9"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -460,6 +460,10 @@
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": "Intermittent MEV",
+                "leakage_when_stopped": {
+                    "back_draught_protection": "internal damper",
+                    "diameter": "150 mm"
+                },
                 "Control": "Intermittent_MEV",
                 "SFP": 1.5,
                 "EnergySupply": "mains elec",

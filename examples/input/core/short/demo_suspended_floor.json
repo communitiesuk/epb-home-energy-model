@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a9"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -340,6 +340,27 @@
                     ]
                 }
             }
+        },
+        "smart_air_brick_control": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": 1.0,
+                        "repeat": 3
+                    },
+                    {
+                        "value": 0.5,
+                        "repeat": 2
+                    },
+                    {
+                        "value": 0.0,
+                        "repeat": 3
+                    }
+                ]
+            }
         }
     },
     "HotWaterSource": {
@@ -613,7 +634,9 @@
                     "thermal_resist_insul": 2.5,
                     "thermal_transm_walls": 1.8,
                     "height_upper_surface": 0.5,
-                    "shield_fact_location": "Average"
+                    "shield_fact_location": "Average",
+                    "Control_smart_air_brick": "smart_air_brick_control",
+                    "vents_open_during_airtightness_test": false
                 }
             },
             "ThermalBridging": {}

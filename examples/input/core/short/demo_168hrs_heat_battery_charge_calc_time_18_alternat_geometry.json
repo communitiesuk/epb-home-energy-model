@@ -5682,7 +5682,11 @@
                 "mid_height_air_flow_path": 2,
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
-                "vent_type": "Intermittent MEV"
+                "vent_type": "Intermittent MEV",
+                "leakage_when_stopped": {
+                    "back_draught_protection": "internal damper",
+                    "diameter": "100 mm"
+                }
             }
         },
         "Vents": {
