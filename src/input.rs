@@ -142,6 +142,10 @@ impl Input {
     pub fn total_floor_area(&self) -> f64 {
         self.zone.values().map(|z| z.area).sum::<f64>()
     }
+
+    pub fn heat_source_wet(&self) -> Option<&HeatSourceWet> {
+        self.heat_source_wet.as_ref()
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
