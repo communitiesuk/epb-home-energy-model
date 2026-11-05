@@ -86,16 +86,16 @@ use crate::core::water_heat_demand::dhw_demand::{OutletType, ELECTRIC_SHOWERS_HW
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
-    ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
-    Control as ControlInput, ControlCombinations, ControlDetails, ControlLogicType,
-    ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FloorData, FlowData,
-    FuelType, HeatBattery as HeatBatteryInput, HeatBatteryPcmChargingSource, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
-    NumericScheduleOrControlReference, OnSiteGeneration as OnSiteGenerationInput,
-    PartyWallCavityType, PcmBatteryChargingConfiguration, PhotovoltaicInputs,
+    BuildingElement as BuildingElementInput, ChargeLevel, ChargeTargetScheduleOrControlReference,
+    ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
+    ControlDetails, ControlLogicType, ControlReferences, EnergyDiverter, EnergySupplyDetails,
+    EnergySupplyInput, FloorData, FlowData, FuelType, HeatBattery as HeatBatteryInput,
+    HeatBatteryPcmChargingSource, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
+    InternalGains as InternalGainsInput, InternalGainsDetails, NumericScheduleOrControlReference,
+    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
+    PcmBatteryChargingConfiguration, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SingleOrMap, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
@@ -793,15 +793,15 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         let r_se = 1. / (H_CE + H_RE);
 
         Ok(match data {
-            BuildingElementInput::Opaque { area_input, .. } => {
+            BuildingElementInput::Opaque { area, .. } => {
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
-                area_input.area() * u_value
+                *area * u_value
             }
-            BuildingElementInput::Transparent { area_input, .. } => {
+            BuildingElementInput::Transparent { height, width, .. } => {
                 let r_curtains_blinds = 0.04;
                 let u_value =
                     1.0 / (thermal_resistance_construction + r_se + r_si + r_curtains_blinds);
-                let area = area_input.area();
+                let area = height * width;
                 area * u_value
             }
             BuildingElementInput::Ground { area, u_value, .. } => *area * *u_value,
@@ -4749,7 +4749,9 @@ fn building_element_from_input(
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
-            area_input,
+            height,
+            area,
+            width,
             pitch,
             solar_absorption_coeff,
             u_value_input,
@@ -4765,13 +4767,8 @@ fn building_element_from_input(
                 false
             };
 
-            let BuildingElementHeightWidthInput { height, width } =
-                area_input.height_and_width.ok_or_else(|| {
-                    anyhow!("Height and width of opaque building element must be provided.")
-                })?;
-
             BuildingElement::Opaque(BuildingElementOpaque::new(
-                area_input.area(),
+                *area,
                 is_unheated_pitched_roof,
                 *pitch,
                 *solar_absorption_coeff,
@@ -4780,13 +4777,14 @@ fn building_element_from_input(
                 *mass_distribution_class,
                 *orientation,
                 *base_height,
-                height,
-                width,
+                *height,
+                *width,
                 external_conditions,
             ))
         }
         BuildingElementInput::Transparent {
-            area_input,
+            height,
+            width,
             u_value_input,
             pitch,
             orientation360: orientation,
@@ -4796,37 +4794,33 @@ fn building_element_from_input(
             shading,
             treatment,
             ..
-        } => {
-            let BuildingElementHeightWidthInput { height, width } = *area_input;
-
-            BuildingElement::Transparent(BuildingElementTransparent::new(
-                *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
-                Some(*orientation),
-                *g_value,
-                *frame_area_fraction,
-                *base_height,
-                height,
-                width,
-                Some(shading.clone()),
-                treatment
-                    .as_ref()
-                    .map(|treatments| {
-                        treatments
-                            .iter()
-                            .map(|t| {
-                                WindowTreatment::from_input(
-                                    t,
-                                    controls,
-                                    simulation_time_iterator.current_hour(),
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .transpose()?,
-                external_conditions,
-            ))
-        }
+        } => BuildingElement::Transparent(BuildingElementTransparent::new(
+            *pitch,
+            init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
+            Some(*orientation),
+            *g_value,
+            *frame_area_fraction,
+            *base_height,
+            *height,
+            *width,
+            Some(shading.clone()),
+            treatment
+                .as_ref()
+                .map(|treatments| {
+                    treatments
+                        .iter()
+                        .map(|t| {
+                            WindowTreatment::from_input(
+                                t,
+                                controls,
+                                simulation_time_iterator.current_hour(),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
+            external_conditions,
+        )),
         BuildingElementInput::Ground {
             area,
             total_area,

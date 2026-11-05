@@ -2939,10 +2939,10 @@ impl InfiltrationVentilation {
             .values()
             .flat_map(|zone| zone.building_elements.values())
             .flat_map(|building_element| match building_element {
-                BuildingElement::Opaque {
-                    pitch, area_input, ..
-                } if pitch_class(*pitch) == HeatFlowDirection::Upwards => {
-                    Some((pitch, area_input.area()))
+                BuildingElement::Opaque { pitch, area, .. }
+                    if pitch_class(*pitch) == HeatFlowDirection::Upwards =>
+                {
+                    Some((pitch, area))
                 }
                 _ => None,
             })
@@ -2966,20 +2966,22 @@ impl InfiltrationVentilation {
             .fold((vec![], vec![]), |(mut facades, mut roofs), item| {
                 match pitch_class(item.pitch()) {
                     HeatFlowDirection::Horizontal => match item {
-                        BuildingElement::Opaque { area_input, .. } => {
-                            facades.push(area_input.area());
+                        BuildingElement::Opaque { area, .. } => {
+                            facades.push(*area);
                         }
-                        BuildingElement::Transparent { area_input, .. } => {
-                            facades.push(area_input.area());
+                        BuildingElement::Transparent { height, width, .. } => {
+                            let area = height * width;
+                            facades.push(area);
                         }
                         _ => {}
                     },
                     HeatFlowDirection::Upwards => match item {
-                        BuildingElement::Opaque { area_input, .. } => {
-                            roofs.push(area_input.area());
+                        BuildingElement::Opaque { area, .. } => {
+                            roofs.push(*area);
                         }
-                        BuildingElement::Transparent { area_input, .. } => {
-                            roofs.push(area_input.area())
+                        BuildingElement::Transparent { height, width, .. } => {
+                            let area = height * width;
+                            roofs.push(area);
                         }
                         _ => {}
                     },
