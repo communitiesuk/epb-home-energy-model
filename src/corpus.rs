@@ -5516,7 +5516,7 @@ fn heat_source_wet_from_input(
                         .clone(),
                 )
             } else {
-                Some(energy_supplies.get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME).expect("An energy supply representing the environment should have been set up early in the lifetime of energy_supplies.")?)
+                Some(energy_supplies.get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME).expect("An energy supply representing the environment should have been set up early in the lifetime of energy_supplies.").clone())
             };
 
             let (boiler, cost_schedule_hybrid_hp) = if let Some(boiler) = boiler {
@@ -6035,7 +6035,7 @@ fn heat_source_from_input(
 
             let energy_supply_from_environment = energy_supplies
                 .get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME)
-                .expect("An energy supply representing energy from the environment is expected to have been set up early in the lifetime of energy_supplies, and this needs to still hold.")?;
+                .expect("An energy supply representing energy from the environment is expected to have been set up early in the lifetime of energy_supplies, and this needs to still hold.");
             let energy_supply_from_environment_conn =
                 EnergySupply::connection(energy_supply_from_environment.clone(), name)?;
             let contents = &WATER;
