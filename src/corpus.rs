@@ -4760,8 +4760,7 @@ fn building_element_from_input(
             ..
         } => {
             let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
-                is_unheated_pitched_roof
-                    .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
+                is_unheated_pitched_roof.ok_or(BuildError::NotSpecifiedWhetherRoofIsUnheated)?
             } else {
                 false
             };
@@ -7742,6 +7741,10 @@ pub enum BuildError {
     BadZoneReference(String),
     #[error("A battery that can be charged from the grid is present but no tariff data has been made available to this HEM calculation.")]
     TariffDataNotProvided,
+    #[error(
+        "An opaque building element with a pitch of less than 60° needs to specify whether it is an unheated pitched roof."
+    )]
+    NotSpecifiedWhetherRoofIsUnheated,
 }
 
 impl From<CircularDependencyError> for BuildError {
