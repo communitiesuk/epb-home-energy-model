@@ -4117,9 +4117,10 @@ fn internal_gains_from_details(
 fn convert_energy_to_wm2(
     internal_gains_details: &InternalGainsDetails,
     total_floor_area: f64,
-) -> anyhow::Result<Vec<f64>> {
+) -> Result<Vec<f64>, BuildError> {
     let schedule = &internal_gains_details.schedule;
-    Ok(reject_nulls(expand_numeric_schedule(schedule))?
+    Ok(reject_nulls(expand_numeric_schedule(schedule))
+        .map_err(|_| BuildError::ExpectedNoNullValuesInSchedule("internal gains".to_string()))?
         .iter()
         .map(|energy_data| energy_data / total_floor_area)
         .collect())
