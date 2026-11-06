@@ -6463,8 +6463,9 @@ fn hot_water_source_from_input(
                                                heat_source: &IndexMap<ArcStr, HeatSourceInput>,
                                                volume: &f64,
                                                daily_losses: &f64|
-     -> anyhow::Result<
+     -> Result<
         IndexMap<ArcStr, PositionedHeatSource>,
+        BuildError,
     > {
         let mut heat_sources: IndexMap<ArcStr, PositionedHeatSource> = Default::default();
 
@@ -6479,8 +6480,8 @@ fn hot_water_source_from_input(
         // could be a pre-heated source or wwhr that might be enough
         for (heat_source_name, heat_source_data) in heat_source {
             if used_heat_source_names.contains(heat_source_name) {
-                return Err(anyhow!(
-                    "Duplicate heat source name detected: {heat_source_name}"
+                return Err(BuildError::HeatSourceNamesNotUnique(
+                    heat_source_name.to_string(),
                 ));
             }
             used_heat_source_names.insert(heat_source_name.clone());
@@ -7763,6 +7764,8 @@ pub enum BuildError {
         "A heat pump with a heat network source must also specify a `temp_flow_limit_upper` field."
     )]
     HeatPumpHeatSourceMissingTempFlowLimitUpperField,
+    #[error("Names for heat sources (pre-heated and hot water sources) must be unique within the input: {0} was found in more than one location.")]
+    HeatSourceNamesNotUnique(String),
 }
 
 impl From<CircularDependencyError> for BuildError {
