@@ -5238,7 +5238,6 @@ impl WetHeatSource {
     }
 }
 
-// TODO - this enum is a placeholder, to review later and potentially implement a trait instead
 #[derive(Debug)]
 pub(crate) enum HeatSystem {
     WetSystem(WetHeatSource),
