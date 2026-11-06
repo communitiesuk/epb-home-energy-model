@@ -6791,9 +6791,7 @@ fn hot_water_source_from_input(
                 heat_source_wet.create_service_hot_water_combi(
                     cloned_input,
                     energy_supply_conn_name.as_str(),
-                    setpoint_temp.ok_or_else(|| {
-                        anyhow!("A setpoint temp was expected on a combi boiler input.")
-                    })?,
+                    *setpoint_temp,
                     cold_water_source,
                     keep_hot_control,
                 )?,

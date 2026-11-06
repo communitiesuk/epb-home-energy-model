@@ -1976,7 +1976,7 @@ mod tests {
                 storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python missing a value
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2116,7 +2116,7 @@ mod tests {
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 combi_type_specific_details: CombiTypeSpecificDetails::Storage {
                     combi_storage_loss_in_test,
                     store_volume,
@@ -2164,7 +2164,7 @@ mod tests {
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have a value
                 combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
                     keep_hot_test_hours,
                     combi_keep_hot_fuel,
@@ -2207,7 +2207,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have a value for this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2244,7 +2244,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2281,7 +2281,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2421,7 +2421,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // field does not exist - seems to be a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: Default::default(),
                 heat_source_wet: Default::default(),

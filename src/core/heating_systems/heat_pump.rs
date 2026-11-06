@@ -7753,7 +7753,7 @@ mod tests {
             storage_loss_factor_1: None,
             storage_loss_factor_2: Some(0.91574),
             rejected_factor_3: Some(0.),
-            setpoint_temp: Some(60.),
+            setpoint_temp: 60.,
             daily_hw_usage: 120.,
         };
         let service_name = "service_hot_water_combi";

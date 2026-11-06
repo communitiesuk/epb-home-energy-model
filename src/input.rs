@@ -2393,7 +2393,7 @@ pub enum HotWaterSourceDetails {
         /// Temperature setpoint for the combi boiler hot water output (unit: ˚C)
         #[validate(minimum = 0.)]
         #[validate(maximum = 100.)]
-        setpoint_temp: Option<f64>,
+        setpoint_temp: f64,
 
         /// Daily hot water usage for the combi boiler system (unit: litre/day)
         #[serde(rename = "daily_HW_usage")]
@@ -8148,7 +8148,7 @@ mod tests {
                     storage_loss_factor_1: Some(1.88),
                     storage_loss_factor_2: None,
                     rejected_factor_3: None,
-                    setpoint_temp: Some(10.),
+                    setpoint_temp: 10.,
                     daily_hw_usage: 120.,
                 })
                 .unwrap()
