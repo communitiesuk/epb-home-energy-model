@@ -5198,7 +5198,7 @@ impl WetHeatSource {
                     keep_hot_control,
                 ).expect("Hot water source passed in direct electric boiler had not been checked for being of combi boiler type - this is a logical error"))
             }
-            source @ _ => {
+            source=> {
                 Err(BuildError::InvalidHeatSourceWetForCombiBoiler(match source {
                     WetHeatSource::Hiu(_) => "HIU",
                     WetHeatSource::HeatBattery(_) => "heat battery",
@@ -5504,7 +5504,9 @@ fn heat_source_wet_from_input(
                 source_type,
                 HeatPumpSourceType::HeatNetwork
             ) {
-                let energy_supply_heat_network = energy_supply_heat_network.as_ref().ok_or_else(|| anyhow!("A heat pump with a heat network source is expected to reference an energy supply for the heat network."))?;
+                let energy_supply_heat_network = energy_supply_heat_network
+                    .as_ref()
+                    .ok_or(BuildError::HeatPumpWithHeatNetworkSourceMissingEnergySupply)?;
                 Some(
                     energy_supplies
                         .get(energy_supply_heat_network)
@@ -7750,6 +7752,8 @@ pub enum BuildError {
     InvalidApplianceGainsFieldCombination,
     #[error("A combi boiler cannot use {0} a HeatSourceWet")]
     InvalidHeatSourceWetForCombiBoiler(&'static str),
+    #[error("A heat pump with a heat network source must also specify an energy supply for the heat network using the `EnergySupply_heat_network` field.")]
+    HeatPumpWithHeatNetworkSourceMissingEnergySupply,
 }
 
 impl From<CircularDependencyError> for BuildError {
