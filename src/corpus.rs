@@ -6105,7 +6105,9 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             &energy_supply_conn_name,
-                            temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
+                            temp_flow_limit_upper.ok_or(
+                                BuildError::HeatPumpHeatSourceMissingTempFlowLimitUpperField,
+                            )?,
                             Some(Arc::new(cold_water_source.clone())),
                             range_time_control,
                         )?),
@@ -6117,29 +6119,32 @@ fn heat_source_from_input(
                             range_time_control,
                         )?),
                     )),
-                    WetHeatSource::DirectElectricBoiler(ref mut boiler) =>
-                        HeatSource::Wet(Box::new(
-                            HeatSourceWet::WaterRegular(DirectElectricBoiler::create_service_hot_water_regular(
+                    WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::WaterRegular(
+                            DirectElectricBoiler::create_service_hot_water_regular(
                                 boiler.clone(),
                                 energy_supply_conn_name.as_str(),
                                 range_time_control,
-                            )?),
-                        )),
-                    WetHeatSource::Hiu(_heat_network) => {
-                        HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
-                            {
-                                HeatNetwork::create_service_hot_water_storage(
-                                    _heat_network,
-                                    &energy_supply_conn_name,
-                                    range_time_control,
-                                )
-                            }
+                            )?,
                         )))
+                    }
+                    WetHeatSource::Hiu(_heat_network) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage({
+                            HeatNetwork::create_service_hot_water_storage(
+                                _heat_network,
+                                &energy_supply_conn_name,
+                                range_time_control,
+                            )
+                        })))
                     }
                     WetHeatSource::HeatBattery(battery) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatBatteryHotWater(match battery {
                             HeatBattery::DryCore(dry_core) => HeatBatteryWaterService::DryCore(
-                                HeatBatteryDryCore::create_service_hot_water_regular(dry_core, &energy_supply_conn_name, range_time_control)?
+                                HeatBatteryDryCore::create_service_hot_water_regular(
+                                    dry_core,
+                                    &energy_supply_conn_name,
+                                    range_time_control,
+                                )?,
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
                                 HeatBatteryPcm::create_service_hot_water_regular(
@@ -7754,6 +7759,10 @@ pub enum BuildError {
     InvalidHeatSourceWetForCombiBoiler(&'static str),
     #[error("A heat pump with a heat network source must also specify an energy supply for the heat network using the `EnergySupply_heat_network` field.")]
     HeatPumpWithHeatNetworkSourceMissingEnergySupply,
+    #[error(
+        "A heat pump with a heat network source must also specify a `temp_flow_limit_upper` field."
+    )]
+    HeatPumpHeatSourceMissingTempFlowLimitUpperField,
 }
 
 impl From<CircularDependencyError> for BuildError {
