@@ -5171,7 +5171,7 @@ impl WetHeatSource {
         temp_hot_water: f64,
         cold_feed: WaterSupply,
         keep_hot_control: Option<Arc<OnOffTimeControl>>,
-    ) -> anyhow::Result<BoilerServiceWaterCombi> {
+    ) -> Result<BoilerServiceWaterCombi, BuildError> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().create_service_hot_water_combi(
                 boiler_data,
@@ -5179,29 +5179,31 @@ impl WetHeatSource {
                 temp_hot_water,
                 cold_feed,
                 keep_hot_control,
-            ),
-            WetHeatSource::Boiler(ref mut boiler) => Boiler::create_service_hot_water_combi(
+            ).map_err(|error| BuildError::DomainModelBuildError { domain_model: "hot water combi boiler for heat pump", error: error.into() }),
+            WetHeatSource::Boiler(ref mut boiler) => Ok(Boiler::create_service_hot_water_combi(
                 boiler.clone(),
                 boiler_data,
                 service_name,
                 temp_hot_water,
                 cold_feed,
                 keep_hot_control,
-            )
-            .map_err(|err| anyhow!(format!("{err}"))),
+            ).expect("Hot water source passed in boiler heat source had not been checked for being of combi boiler type - this is a logical error")),
             WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
-                DirectElectricBoiler::create_service_hot_water_combi(
+                Ok(DirectElectricBoiler::create_service_hot_water_combi(
                     boiler.clone(),
                     service_name,
                     boiler_data,
                     temp_hot_water,
                     cold_feed,
                     keep_hot_control,
-                )
-                .map_err(|err| anyhow!(format!("{err}")))
+                ).expect("Hot water source passed in direct electric boiler had not been checked for being of combi boiler type - this is a logical error"))
             }
-            _ => {
-                bail!("Expect to only be able to create a hot water combi service for boilers and heat pumps.")
+            source @ _ => {
+                Err(BuildError::InvalidHeatSourceWetForCombiBoiler(match source {
+                    WetHeatSource::Hiu(_) => "HIU",
+                    WetHeatSource::HeatBattery(_) => "heat battery",
+                    _ => unreachable!(),
+                }))
             }
         }
     }
@@ -7747,6 +7749,8 @@ pub enum BuildError {
     NotSpecifiedWhetherRoofIsUnheated,
     #[error("An appliance gains input should either have `Events` and `Standby` fields, or a `schedule` field.")]
     InvalidApplianceGainsFieldCombination,
+    #[error("A combi boiler cannot use {0} a HeatSourceWet")]
+    InvalidHeatSourceWetForCombiBoiler(&'static str),
 }
 
 impl From<CircularDependencyError> for BuildError {
