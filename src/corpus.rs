@@ -5041,13 +5041,14 @@ fn appliance_gains_from_single_input(
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<ApplianceGains> {
+) -> Result<ApplianceGains, BuildError> {
     let total_energy_supply = reject_nulls(expand_numeric_schedule(
         input
             .schedule
             .as_ref()
-            .ok_or_else(|| anyhow!("Appliance gains did not have schedule when expected."))?,
-    ))?
+            .ok_or(BuildError::InvalidApplianceGainsFieldCombination)?,
+    ))
+    .map_err(|_| BuildError::ExpectedNoNullValuesInSchedule("appliance gains".to_string()))?
     .iter()
     .map(|energy_data| energy_data / total_floor_area)
     .collect();
@@ -5060,6 +5061,10 @@ fn appliance_gains_from_single_input(
         simulation_time_iterator,
         energy_supply_connection,
     )
+    .map_err(|error| BuildError::DomainModelBuildError {
+        domain_model: "appliance gains",
+        error: error.into(),
+    })
 }
 
 #[derive(Debug)]
@@ -7740,6 +7745,8 @@ pub enum BuildError {
         "An opaque building element with a pitch of less than 60° needs to specify whether it is an unheated pitched roof."
     )]
     NotSpecifiedWhetherRoofIsUnheated,
+    #[error("An appliance gains input should either have `Events` and `Standby` fields, or a `schedule` field.")]
+    InvalidApplianceGainsFieldCombination,
 }
 
 impl From<CircularDependencyError> for BuildError {
