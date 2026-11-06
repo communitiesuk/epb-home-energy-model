@@ -6864,11 +6864,7 @@ fn hot_water_source_from_input(
                 HeatNetwork::create_service_hot_water_direct(
                     heat_network.clone(),
                     &energy_supply_conn_name,
-                    (*setpoint_temp).ok_or_else(|| {
-                        anyhow!(
-                        "A setpoint_temp value was expected on a point of use hot water source."
-                    )
-                    })?,
+                    (*setpoint_temp).ok_or(BuildError::HiuMissingSetpointTempField)?,
                     cold_water_source,
                 )
                 .into(),
@@ -7685,6 +7681,7 @@ impl AndReturn {
 
 /// An error encountered when building the corpus.
 #[derive(Debug, Error)]
+#[cfg_attr(test, visibility::make(pub(crate)))]
 pub enum BuildError {
     #[non_exhaustive]
     #[error(transparent)]
@@ -7764,6 +7761,8 @@ pub enum BuildError {
     HeatPumpHeatSourceMissingTempFlowLimitUpperField,
     #[error("Names for heat sources (pre-heated and hot water sources) must be unique within the input: {0} was found in more than one location.")]
     HeatSourceNamesNotUnique(String),
+    #[error("An HIU needs a `setpoint_temp` field to be provided.")]
+    HiuMissingSetpointTempField,
 }
 
 impl From<CircularDependencyError> for BuildError {
