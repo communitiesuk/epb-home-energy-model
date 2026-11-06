@@ -6996,11 +6996,11 @@ fn space_heat_systems_from_input(
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
     initial_temp: f64,
-) -> anyhow::Result<SpaceHeatSystemsData> {
+) -> Result<SpaceHeatSystemsData, BuildError> {
     let mut energy_conn_names_for_systems: IndexMap<ArcStr, ArcStr> = Default::default();
     let mut heat_battery_names_for_space_heat_systems: IndexMap<ArcStr, Vec<ArcStr>> =
         Default::default();
-    let zone_heated_by_system = |heat_system_name: &ArcStr| -> anyhow::Result<Arc<Zone>> {
+    let zone_heated_by_system = |heat_system_name: &ArcStr| -> Result<Arc<Zone>, BuildError> {
         for (zone_name, zone) in zones.iter() {
             if heat_system_name_for_zone
                 .get(zone_name)
@@ -7009,9 +7009,9 @@ fn space_heat_systems_from_input(
                 return Ok(zone.clone());
             }
         }
-        Err(anyhow!(
+        Err(BuildError::Unexpected(format!(
             "Zone for heat system not found: {heat_system_name}"
-        ))
+        )))
     };
     let space_heat_systems = input
         .iter()
@@ -7763,6 +7763,8 @@ pub enum BuildError {
     HeatSourceNamesNotUnique(String),
     #[error("An HIU needs a `setpoint_temp` field to be provided.")]
     HiuMissingSetpointTempField,
+    #[error("An error that we did not expect to happen, did. We will investigate. Error: {0}")]
+    Unexpected(String),
 }
 
 impl From<CircularDependencyError> for BuildError {
