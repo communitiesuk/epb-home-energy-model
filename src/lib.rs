@@ -40,6 +40,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{validator, Validator};
+pub use parking_lot::{Mutex as ParkingLotMutex, RwLock as ParkingLotRwLock};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use std::borrow::Cow;
