@@ -22,7 +22,7 @@ clap = { version = "4.6.1", features = ["derive"], optional = true }
 convert_case = "0.12.0"
 csv = "1.4.0"
 delegate = "0.13.5"
-educe = { version = "0.6.0", default-features = false, features = ["Debug", "Default", "PartialEq"] }
+educe = { version = "0.8.2", default-features = false, features = ["Debug", "Default", "PartialEq"] }
 either = "1.19.0"
 eqsolver = "0.4.0"
 erased-serde = "0.4.10"
@@ -32,11 +32,11 @@ indexmap = { version = "2.13.1", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.18.4", optional = true }
 interp = "2.1.1"
 itertools = "0.15.0"
-jsonschema = { version = "0.60.2", default-features = false, features = ["macros"] }
+jsonschema = { version = "0.61.0", default-features = false, features = ["macros"] }
 monostate = "1.0.2"
 nalgebra = "0.34.2"
 ordered-float = "5.3.0"
-parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
+parking_lot = "0.13.0"
 petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
