@@ -7719,6 +7719,7 @@ pub enum BuildError {
     #[error("Incompatible control provided: {0}")]
     IncompatibleControl(String),
     #[error("Error when building HEM {domain_model} model: {error}")]
+    #[allow(clippy::enum_variant_names)]
     DomainModelBuildError {
         domain_model: &'static str,
         #[source]
