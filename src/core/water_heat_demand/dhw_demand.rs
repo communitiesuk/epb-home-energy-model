@@ -20,10 +20,10 @@ use crate::input::{
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
     WaterDistribution as WaterDistributionInput, WaterHeatingEvent, WaterPipeworkSimple,
 };
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -362,14 +362,14 @@ impl DomesticHotWaterDemand {
             volume_required_already,
             simtime,
         )?;
-        let sum_t_by_v = FSum::with_all(
-            list_temperature_for_required_volume
-                .iter()
-                .map(|(t, v)| t * v),
-        )
-        .value();
-        let sum_v =
-            FSum::with_all(list_temperature_for_required_volume.iter().map(|(_, v)| v)).value();
+        let sum_t_by_v = list_temperature_for_required_volume
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>();
+        let sum_v = list_temperature_for_required_volume
+            .iter()
+            .map(|(_, v)| *v)
+            .sum_with_accumulator::<Sum2<_>>();
 
         // Return average hot water temperature for the required volume
         Ok(sum_t_by_v / sum_v)
@@ -554,19 +554,27 @@ impl DomesticHotWaterDemand {
                     *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
                     let list_temperature_volume = cold_water_source
                         .get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
-                    let sum_t_by_v =
-                        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
-                    let sum_v =
-                        FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+                    let sum_t_by_v = list_temperature_volume
+                        .iter()
+                        .map(|(t, v)| t * v)
+                        .sum_with_accumulator::<Sum2<_>>();
+                    let sum_v = list_temperature_volume
+                        .iter()
+                        .map(|(_, v)| *v)
+                        .sum_with_accumulator::<Sum2<_>>();
 
                     sum_t_by_v / sum_v
                 } else {
                     let list_temperature_volume =
                         cold_water_source.get_temp_cold_water(hw_demand_target_i, simtime)?;
-                    let sum_t_by_v =
-                        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
-                    let sum_v =
-                        FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+                    let sum_t_by_v = list_temperature_volume
+                        .iter()
+                        .map(|(t, v)| t * v)
+                        .sum_with_accumulator::<Sum2<_>>();
+                    let sum_v = list_temperature_volume
+                        .iter()
+                        .map(|(_, v)| *v)
+                        .sum_with_accumulator::<Sum2<_>>();
 
                     sum_t_by_v / sum_v
                 };
@@ -747,9 +755,14 @@ impl DomesticHotWaterDemand {
             for event in &filtered_events {
                 let list_temperature_volume =
                     cold_water_source.get_temp_cold_water(event.volume_hot, simtime)?;
-                let sum_t_by_v =
-                    FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
-                let sum_v = FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+                let sum_t_by_v = list_temperature_volume
+                    .iter()
+                    .map(|(t, v)| t * v)
+                    .sum_with_accumulator::<Sum2<_>>();
+                let sum_v = list_temperature_volume
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .sum_with_accumulator::<Sum2<_>>();
                 let cold_water_temperature = sum_t_by_v / sum_v;
 
                 *hw_energy_demand_at_hot_water_source
@@ -1013,8 +1026,8 @@ pub mod tests {
         Baths, FuelType, MixerShowerWwhrsConfiguration, OtherWaterUses, Showers,
         WaterPipeworkLocation,
     };
+    use accurate::sum::Sum2;
     use approx::assert_relative_eq;
-    use fsum::FSum;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
@@ -1124,12 +1137,10 @@ pub mod tests {
             usage_events: Vec<WaterEventResult>,
             _: Timestep,
         ) -> anyhow::Result<f64> {
-            Ok(FSum::with_all(
-                usage_events
-                    .iter()
-                    .map(|e| e.temperature_warm * e.volume_warm / 4200.0),
-            )
-            .value())
+            Ok(usage_events
+                .iter()
+                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
+                .sum_with_accumulator::<Sum2<_>>())
         }
 
         fn get_temp_hot_water(
@@ -1204,12 +1215,10 @@ pub mod tests {
             usage_events: Vec<WaterEventResult>,
             _: Timestep,
         ) -> anyhow::Result<f64> {
-            Ok(FSum::with_all(
-                usage_events
-                    .iter()
-                    .map(|e| e.temperature_warm * e.volume_warm / 4200.0),
-            )
-            .value())
+            Ok(usage_events
+                .iter()
+                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
+                .sum_with_accumulator::<Sum2<_>>())
         }
 
         fn get_temp_hot_water(

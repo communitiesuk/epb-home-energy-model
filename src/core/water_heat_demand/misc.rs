@@ -1,9 +1,9 @@
 use crate::core::material_properties::WATER;
 use crate::core::simulation_time::Timestep;
 use crate::core::water_heat_demand::dhw_demand::OutletType;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::bail;
 use approx::relative_eq;
-use fsum::FSum;
 use itertools::Itertools;
 
 // Fraction of domestic hot water energy that becomes internal gains
@@ -169,9 +169,14 @@ pub(crate) fn volume_hot_water_required<
     let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5)?;
     let mut list_temperature_volume =
         func_temperature_cold_water(volume_warm_water * 0.5, simtime)?;
-    let mut temperature_cold_water =
-        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value()
-            / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+    let mut temperature_cold_water = list_temperature_volume
+        .iter()
+        .map(|(t, v)| t * v)
+        .sum_with_accumulator::<Sum2<_>>()
+        / list_temperature_volume
+            .iter()
+            .map(|(_, v)| *v)
+            .sum_with_accumulator::<Sum2<_>>();
     let mut temperature_warm_water = temperature_hot_water;
     let mut volume_hot_water: f64 = Default::default();
     let mut was_in_loop = false;
@@ -210,9 +215,15 @@ pub(crate) fn volume_hot_water_required<
             &mut list_temperature_volume,
             func_temperature_cold_water(volume_cold_water, simtime)?,
         );
-        temperature_cold_water = FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v))
-            .value()
-            / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+        temperature_cold_water = list_temperature_volume
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>()
+            / list_temperature_volume
+                .iter()
+                .map(|(_, v)| v)
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
         temperature_warm_water = (volume_hot_water * temperature_hot_water
             + volume_cold_water * temperature_cold_water)
             / volume_warm_water;
@@ -253,8 +264,11 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
     }
 
     // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-    let weighted_temp_sum = FSum::with_all(&temp_volume_products).value();
-    let total_volume = FSum::with_all(&volumes).value();
+    let weighted_temp_sum = temp_volume_products
+        .iter()
+        .copied()
+        .sum_with_accumulator::<Sum2<_>>();
+    let total_volume = volumes.iter().copied().sum_with_accumulator::<Sum2<_>>();
 
     if relative_eq!(total_volume, 0., epsilon = 1e-10, max_relative = 1e-9) {
         bail!("Cannot calculate weighted average: total volume is zero");

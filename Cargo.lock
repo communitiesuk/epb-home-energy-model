@@ -837,12 +837,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fsum"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e56b105d5a2d6fad6595d97230c279c918c0ab7311b4953dba630c4ca406c4f"
-
-[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1156,7 +1150,6 @@ dependencies = [
  "eqsolver",
  "erased-serde",
  "formatx",
- "fsum",
  "indexmap 2.14.2",
  "indicatif",
  "interp",

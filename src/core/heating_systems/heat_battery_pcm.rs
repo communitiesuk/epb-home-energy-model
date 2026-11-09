@@ -31,11 +31,11 @@ use crate::input::{
     HeatBattery as HeatBatteryInput, HeatSourceWetDetails, PcmBatteryChargingConfiguration,
     ScheduleUnit,
 };
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail, Ok};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1896,7 +1896,10 @@ impl HeatBatteryPcm {
                     epsilon = NEGLIGIBLE_TEMP_DIFF_C
                 )
             {
-                let energy_this_step_kj = -FSum::with_all(&energy_transf_charged).value();
+                let energy_this_step_kj = -energy_transf_charged
+                    .iter()
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>();
                 energy_absorbed_kj += energy_this_step_kj;
                 if energy_absorbed_kj > energy_limit_kj
                     || relative_eq!(energy_absorbed_kj, energy_limit_kj, epsilon = 1e-10)
@@ -2536,7 +2539,11 @@ impl HeatBatteryPcm {
 
         //Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
         Ok((
-            FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
+            energy_loss
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>()
+                / KILOJOULES_PER_KILOWATT_HOUR as f64,
             zone_temp_c_dist,
         ))
     }
@@ -2693,7 +2700,10 @@ impl HeatBatteryPcm {
             );
 
             // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-            let energy_delivered_kj = FSum::with_all(&energy_transf_delivered).value();
+            let energy_delivered_kj = energy_transf_delivered
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
             let energy_delivered_ts = energy_delivered_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
 
             // Stop before counting a sub-step in which the battery would absorb heat from
@@ -2853,7 +2863,10 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            let energy_delivered_kj = FSum::with_all(&energy_transf_delivered).value();
+            let energy_delivered_kj = energy_transf_delivered
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
 
             //  A negligibly-negative result is floating-point noise, not real
             //  absorption, so it is treated as zero to keep the stop decision
@@ -3254,15 +3267,13 @@ impl HeatBatteryPcm {
                 results_annual["auxiliary"].insert(
                     ((*parameter).into(), param_unit.map(Into::into)),
                     ResultParamValue::from(
-                        FSum::with_all(
-                            results_per_timestep["auxiliary"][&(
-                                (*parameter).into(),
-                                param_unit.map(|x| x.to_string().into()),
-                            )]
-                                .iter()
-                                .map(ResultParamValue::as_f64),
-                        )
-                        .value(),
+                        results_per_timestep["auxiliary"][&(
+                            (*parameter).into(),
+                            param_unit.map(|x| x.to_string().into()),
+                        )]
+                            .iter()
+                            .map(ResultParamValue::as_f64)
+                            .sum_with_accumulator::<Sum2<_>>(),
                     ),
                 );
             }
@@ -3274,13 +3285,11 @@ impl HeatBatteryPcm {
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
                     let parameter_annual_total = ResultParamValue::from(
-                        FSum::with_all(
-                            results_per_timestep[&service_name]
-                                [&(parameter.into(), param_unit.map(Into::into))]
-                                .iter()
-                                .map(ResultParamValue::as_f64),
-                        )
-                        .value(),
+                        results_per_timestep[&service_name]
+                            [&(parameter.into(), param_unit.map(Into::into))]
+                            .iter()
+                            .map(ResultParamValue::as_f64)
+                            .sum_with_accumulator::<Sum2<_>>(),
                     );
                     results_annual[&service_name].insert(
                         (parameter.into(), param_unit.map(Into::into)),

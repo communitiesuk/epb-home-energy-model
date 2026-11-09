@@ -17,11 +17,11 @@ use crate::input::{
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::statistics::np_interp;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::{abs_diff_eq, relative_eq};
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::cmp::PartialEq;
@@ -403,12 +403,10 @@ impl BoilerServiceWaterCombi {
                 .cold_feed
                 .draw_off_water(event.volume_hot, simtime)?
                 .into_iter();
-            let total_temperatures_by_volume: f64 = FSum::with_all(
-                list_temp_vol
-                    .clone()
-                    .map(|(temperature, volume)| temperature * volume),
-            )
-            .value();
+            let total_temperatures_by_volume: f64 = list_temp_vol
+                .clone()
+                .map(|(temperature, volume)| temperature * volume)
+                .sum_with_accumulator::<Sum2<_>>();
 
             let total_volume: f64 = list_temp_vol.map(|(_, volume)| volume).sum();
             let temp_cold_water = total_temperatures_by_volume / total_volume;
@@ -1516,17 +1514,23 @@ impl Boiler {
     }
 
     fn sum_space_heating_service_results_energy_output_required(&self) -> f64 {
-        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
-            (x.service_type == ServiceType::Space).then_some(x.energy_output_required)
-        }))
-        .value()
+        self.service_results
+            .read()
+            .iter()
+            .filter_map(|x| {
+                (x.service_type == ServiceType::Space).then_some(x.energy_output_required)
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     fn sum_space_heating_service_results_energy_output_provided(&self) -> f64 {
-        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
-            (x.service_type == ServiceType::Space).then_some(x.energy_output_provided)
-        }))
-        .value()
+        self.service_results
+            .read()
+            .iter()
+            .filter_map(|x| {
+                (x.service_type == ServiceType::Space).then_some(x.energy_output_provided)
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     /// Calculate boiler fuel demand for all services (excl. auxiliary),

@@ -1,10 +1,10 @@
 use crate::core::simulation_time::Timestep;
 use crate::input::WwhrsConfiguration as WwhrsConfigurationInput;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -245,9 +245,15 @@ impl WwhrsInstantaneous {
         let list_temp_vol = self
             .cold_water_source
             .get_temp_cold_water(volume_cold_water, timestep)?;
-        let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
-            .value()
-            / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
+        let temp_main = list_temp_vol
+            .clone()
+            .into_iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>()
+            / list_temp_vol
+                .into_iter()
+                .map(|(_, v)| v)
+                .sum_with_accumulator::<Sum2<_>>();
 
         // Get efficiency for System A
         let efficiency = self.get_efficiency_from_flowrate(
@@ -288,9 +294,15 @@ impl WwhrsInstantaneous {
         let list_temp_vol = self
             .cold_water_source
             .get_temp_cold_water(volume_cold_water, timestep)?;
-        let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
-            .value()
-            / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
+        let temp_main = list_temp_vol
+            .clone()
+            .into_iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>()
+            / list_temp_vol
+                .into_iter()
+                .map(|(_, v)| v)
+                .sum_with_accumulator::<Sum2<_>>();
 
         // Determine which approach to use based on available data
         let eta_uf = match self.system_b_efficiencies {
@@ -363,9 +375,15 @@ impl WwhrsInstantaneous {
         let list_temp_vol = self
             .cold_water_source
             .get_temp_cold_water(volume_cold_water, timestep)?;
-        let temp_main = FSum::with_all(list_temp_vol.clone().into_iter().map(|(t, v)| t * v))
-            .value()
-            / FSum::with_all(list_temp_vol.into_iter().map(|(_, v)| v)).value();
+        let temp_main = list_temp_vol
+            .clone()
+            .into_iter()
+            .map(|(t, v)| t * v)
+            .sum_with_accumulator::<Sum2<_>>()
+            / list_temp_vol
+                .into_iter()
+                .map(|(_, v)| v)
+                .sum_with_accumulator::<Sum2<_>>();
 
         let eta_uf = match self.system_c_efficiencies {
             Some(_) => {

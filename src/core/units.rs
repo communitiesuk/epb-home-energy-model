@@ -1,5 +1,5 @@
 use crate::compare_floats::min_of_2;
-use fsum::FSum;
+use accurate::{sum::Sum2, traits::*};
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 use std::fmt::Display;
@@ -22,13 +22,11 @@ pub(crate) const KNOTS_PER_METRES_PER_SECOND: f64 = 1. / (1852. / 3600.);
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 
 pub(crate) fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
-    FSum::with_all(
-        list_monthly_averages
-            .iter()
-            .enumerate()
-            .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64),
-    )
-    .value()
+    list_monthly_averages
+        .iter()
+        .enumerate()
+        .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64)
+        .sum_with_accumulator::<Sum2<_>>()
         / DAYS_IN_MONTH.iter().sum::<u32>() as f64
 }
 
@@ -56,10 +54,10 @@ pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f
     (0..total_steps)
         .step_by(steps_per_day)
         .map(|y| {
-            FSum::with_all(
-                timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())].iter(),
-            )
-            .value()
+            timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>()
         })
         .collect()
 }

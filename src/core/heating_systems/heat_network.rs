@@ -6,10 +6,10 @@ use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::simulation_time::Timestep;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
-use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
@@ -72,8 +72,14 @@ impl HeatNetworkServiceWaterDirect {
                 continue;
             }
             let list_temp_volume = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
-            let sum_t_by_v = FSum::with_all(list_temp_volume.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_volume.iter().map(|(_, v)| v)).value();
+            let sum_t_by_v = list_temp_volume
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_volume
+                .iter()
+                .map(|(_, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
 
             let temp_cold_water = sum_t_by_v / sum_v;
 

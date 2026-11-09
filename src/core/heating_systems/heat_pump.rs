@@ -27,12 +27,12 @@ use crate::input::{
     HeatPumpTestDatum as HeatPumpTestDatumInput, HeatSourceWetDetails, HotWaterSourceDetails,
 };
 use crate::statistics::np_interp;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -1330,13 +1330,11 @@ fn average_capacity(
     design_flow_temps
         .iter()
         .map(|design_flow_temp| {
-            FSum::with_all(
-                test_data[design_flow_temp]
-                    .iter()
-                    .filter(|datum| datum.test_letter.is_non_bivalent())
-                    .map(|datum| datum.capacity),
-            )
-            .value()
+            test_data[design_flow_temp]
+                .iter()
+                .filter(|datum| datum.test_letter.is_non_bivalent())
+                .map(|datum| datum.capacity)
+                .sum_with_accumulator::<Sum2<_>>()
                 / TEST_LETTERS_NON_BIVALENT.len() as f64
         })
         .collect()
@@ -1540,8 +1538,14 @@ impl HeatPumpServiceWater {
         let temp_cold_water = if let Some(cold_feed) = &self.cold_feed {
             // TODO (from Python) Arbitrary volume used here for reference cold water temperature
             let list_temp_vol = cold_feed.get_temp_cold_water(1., timestep)?;
-            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value();
+            let sum_t_by_v = list_temp_vol
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>();
+            let sum_v = list_temp_vol
+                .iter()
+                .map(|(_, v)| *v)
+                .sum_with_accumulator::<Sum2<_>>();
             Some(celsius_to_kelvin(sum_t_by_v / sum_v)?)
         } else {
             temp_return_k
@@ -2193,8 +2197,11 @@ impl HeatPump {
                 if same_ext_air_ratio > 1 {
                     bail!("More than one unique external air ratio entered.");
                 }
-                let ext_air_ratio: f64 =
-                    FSum::with_all(&ext_air_ratio_list).value() / ext_air_ratio_list.len() as f64;
+                let ext_air_ratio: f64 = ext_air_ratio_list
+                    .iter()
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>()
+                    / ext_air_ratio_list.len() as f64;
                 (
                     eahp_mixed_max_temp,
                     eahp_mixed_min_temp,
@@ -3951,15 +3958,18 @@ impl HeatPump {
             - self
                 .total_time_running_current_timestep_full_load
                 .load(Ordering::SeqCst);
-        let part_load_sum: f64 =
-            FSum::with_all(self.service_results.read().iter().filter_map(|result| {
+        let part_load_sum: f64 = self
+            .service_results
+            .read()
+            .iter()
+            .filter_map(|result| {
                 if let ServiceResult::Full(heat_pump_calc) = result {
                     heat_pump_calc.time_running_part_load
                 } else {
                     None
                 }
-            }))
-            .value();
+            })
+            .sum_with_accumulator::<Sum2<_>>();
         let time_remaining_current_timestep_part_load = timestep - part_load_sum;
 
         if relative_eq!(
@@ -4213,13 +4223,11 @@ impl HeatPump {
                     auxiliary_annual_results.insert(
                         (parameter.into(), Some(param_unit.into())),
                         ResultParamValue::from(
-                            FSum::with_all(
-                                results_per_timestep["auxiliary"]
-                                    [&(parameter.into(), Some(param_unit.into()))]
-                                    .iter()
-                                    .map(ResultParamValue::as_f64),
-                            )
-                            .value(),
+                            results_per_timestep["auxiliary"]
+                                [&(parameter.into(), Some(param_unit.into()))]
+                                .iter()
+                                .map(ResultParamValue::as_f64)
+                                .sum_with_accumulator::<Sum2<_>>(),
                         ),
                     );
                 }
@@ -4236,13 +4244,11 @@ impl HeatPump {
                 for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                     if incl_in_annual {
                         let parameter_annual_total = ResultParamValue::from(
-                            FSum::with_all(
-                                results_per_timestep[&service_name]
-                                    [&(parameter.into(), param_unit.map(Into::into))]
-                                    .iter()
-                                    .map(ResultParamValue::as_f64),
-                            )
-                            .value(),
+                            results_per_timestep[&service_name]
+                                [&(parameter.into(), param_unit.map(Into::into))]
+                                .iter()
+                                .map(ResultParamValue::as_f64)
+                                .sum_with_accumulator::<Sum2<_>>(),
                         );
                         annual_results_entry.insert(
                             (parameter.into(), param_unit.map(Into::into)),
@@ -4282,13 +4288,11 @@ impl HeatPump {
                 results_annual.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H5".into(), Some("kWh".into())),
                     ResultParamValue::from(
-                        FSum::with_all(
-                            results_per_timestep[&service_name]
-                                [&("energy_delivered_H5".into(), Some("kWh".into()))]
-                                .iter()
-                                .map(ResultParamValue::as_f64),
-                        )
-                        .value(),
+                        results_per_timestep[&service_name]
+                            [&("energy_delivered_H5".into(), Some("kWh".into()))]
+                            .iter()
+                            .map(ResultParamValue::as_f64)
+                            .sum_with_accumulator::<Sum2<_>>(),
                     ),
                 );
 
@@ -4333,7 +4337,10 @@ impl HeatPump {
         let energy_auxiliary = {
             match results_auxiliary {
                 Some(results_aux) => ResultParamValue::from(
-                    FSum::with_all(results_aux.values().map(ResultParamValue::as_f64)).value(),
+                    results_aux
+                        .values()
+                        .map(ResultParamValue::as_f64)
+                        .sum_with_accumulator::<Sum2<_>>(),
                 ),
                 None => ResultParamValue::Number(0.),
             }

@@ -11,11 +11,11 @@ use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::TempInternalAirFn;
 use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
@@ -124,7 +124,10 @@ impl Zone {
                 .sum::<f64>(),
         };
 
-        let area_el_total = FSum::with_all(building_elements.values().map(|el| el.area())).value();
+        let area_el_total = building_elements
+            .values()
+            .map(|el| el.area())
+            .sum_with_accumulator::<Sum2<_>>();
         let c_int = K_M_INT * area;
 
         // Calculate:
@@ -476,21 +479,22 @@ impl Zone {
         //      interface as other ventilation element classes, which could make
         //      future development more difficult. Ideally, we would find a
         //      cleaner way to implement this difference.
-        matrix_a[(self.zone_idx, self.zone_idx)] =
-            (self.c_int / delta_t)
-                + FSum::with_all(self.building_elements.iter().enumerate().map(
-                    |(eli_idx, nel)| {
-                        let NamedBuildingElement { element: eli, .. } = nel;
-                        eli.area()
-                            * eli.h_ci(
-                                temp_prev[self.zone_idx],
-                                temp_prev[self.element_positions[eli_idx].1],
-                            )
-                    },
-                ))
-                .value()
-                + h_ve
-                + self.tb_heat_trans_coeff;
+        matrix_a[(self.zone_idx, self.zone_idx)] = (self.c_int / delta_t)
+            + self
+                .building_elements
+                .iter()
+                .enumerate()
+                .map(|(eli_idx, nel)| {
+                    let NamedBuildingElement { element: eli, .. } = nel;
+                    eli.area()
+                        * eli.h_ci(
+                            temp_prev[self.zone_idx],
+                            temp_prev[self.element_positions[eli_idx].1],
+                        )
+                })
+                .sum_with_accumulator::<Sum2<_>>()
+            + h_ve
+            + self.tb_heat_trans_coeff;
 
         // Add final sum term for LHS of eqn 38 in loop below.
         // These are coeffs for temperatures of internal surface nodes of
@@ -881,13 +885,15 @@ impl Zone {
         let temp_int_air = temp_vector[self.zone_idx];
 
         // Mean radiant temperature is weighted average of internal surface temperatures
-        let temp_mean_radiant = FSum::with_all(self.building_elements.iter().enumerate().map(
-            |(eli_idx, nel)| {
+        let temp_mean_radiant = self
+            .building_elements
+            .iter()
+            .enumerate()
+            .map(|(eli_idx, nel)| {
                 let NamedBuildingElement { element: eli, .. } = nel;
                 eli.area() * temp_vector[self.element_positions[eli_idx].1]
-            },
-        ))
-        .value()
+            })
+            .sum_with_accumulator::<Sum2<_>>()
             / self.area_el_total;
         (temp_int_air + temp_mean_radiant) / 2.0
     }

@@ -22,6 +22,7 @@ use crate::input::{
     TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
 use crate::StringOrNumber;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail, Error};
 use approx::relative_eq;
 use arcstr::ArcStr;
@@ -29,7 +30,6 @@ use argmin::{
     core::{CostFunction, Executor},
     solver::brent::BrentRoot,
 };
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -2869,10 +2869,12 @@ impl InfiltrationVentilation {
         temp_outdoor_air: f64,
         temp_indoor_air: f64,
     ) -> f64 {
-        FSum::with_all(self.mech_vents().iter().map(|mech_vent| {
-            mech_vent.calc_internal_gains_ductwork(temp_outdoor_air, temp_indoor_air)
-        }))
-        .value()
+        self.mech_vents()
+            .iter()
+            .map(|mech_vent| {
+                mech_vent.calc_internal_gains_ductwork(temp_outdoor_air, temp_indoor_air)
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     /// Equivalent of create_infiltration_ventilation in upstream

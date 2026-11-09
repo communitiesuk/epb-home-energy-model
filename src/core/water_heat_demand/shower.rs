@@ -6,9 +6,9 @@ use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::anyhow;
 use approx::relative_eq;
-use fsum::FSum;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -243,9 +243,14 @@ impl InstantElectricShower {
             let list_temperature_volume = self
                 .cold_water_source
                 .get_temp_cold_water(volume_warm_water, simtime)?;
-            let temperature_cold =
-                FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value()
-                    / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+            let temperature_cold = list_temperature_volume
+                .iter()
+                .map(|(t, v)| t * v)
+                .sum_with_accumulator::<Sum2<_>>()
+                / list_temperature_volume
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .sum_with_accumulator::<Sum2<_>>();
             volume_warm_water_prev = volume_warm_water;
             volume_warm_water = electricity_demand
                 / WATER
