@@ -81,3 +81,6 @@ inherits = "profiling"
 
 [workspace]
 members = ["hem-lambda"]
+
+[features]
+default = ["clap"]
