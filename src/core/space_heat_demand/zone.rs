@@ -517,7 +517,7 @@ impl Zone {
             + F_SOL_C * gains_solar
             + f_hc_c * gains_heat_cool;
 
-        let vector_x = self.fast_solver(matrix_a, vector_b)?;
+        let vector_x = self.fast_solver(&mut matrix_a, &mut vector_b)?;
 
         let heat_balance = print_heat_balance.then(|| {
             // Collect outputs, in W, for heat balance at air node
@@ -776,17 +776,9 @@ impl Zone {
     ///   external surface, and calculate temperatures in sequence
     fn fast_solver(
         &self,
-        coeffs: DMatrix<f64>,
-        rhs: DVector<f64>,
+        coeffs: &mut DMatrix<f64>,
+        rhs: &mut DVector<f64>,
     ) -> Result<Vec<f64>, SolverError> {
-        // Init matrix with zeroes
-        // Number of rows in matrix = number of columns
-        // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
-        let mut coeffs_adj: DMatrix<f64> = DMatrix::zeros(self.no_of_temps, self.no_of_temps);
-
-        // Init rhs_adj with zeroes (length = number of nodes + 1 for overall zone heat balance)
-        let mut rhs_adj: DVector<f64> = DVector::zeros(self.no_of_temps);
-
         // Init matrix with zeroes
         // Number of rows in matrix = number of columns
         // = total number of internal surface nodes + 1 for internal air node
@@ -802,23 +794,22 @@ impl Zone {
             let (idx_ext_surface, idx_int_surface) = self.element_positions[el_idx];
 
             // No adjusted coeffs and RHS for external surface heat balance eqn
-            coeffs_adj[(idx_ext_surface, idx_ext_surface)] =
-                coeffs[(idx_ext_surface, idx_ext_surface)];
-            rhs_adj[idx_ext_surface] = rhs[idx_ext_surface];
 
             // Loop over nodes, from inside node adjacent to external surface, to internal surface
+            // adjusting the coefficients in place as none of the adjustments rely on values yet to be adjusted
             for idx in (idx_ext_surface + 1)..(idx_int_surface + 1) {
                 // Calculate adjusted coeffs and RHS for each heat balance eqn
-                coeffs_adj[(idx, idx)] = coeffs[(idx, idx)]
-                    - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)]
-                        / coeffs_adj[(idx - 1, idx - 1)];
-                rhs_adj[idx] = rhs[idx]
-                    - rhs_adj[idx - 1] * coeffs[(idx, idx - 1)] / coeffs_adj[(idx - 1, idx - 1)];
+                let adjusted_diagonal = coeffs[(idx, idx)]
+                    - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)] / coeffs[(idx - 1, idx - 1)];
+                let adjusted_rhs =
+                    rhs[idx] - rhs[idx - 1] * coeffs[(idx, idx - 1)] / coeffs[(idx - 1, idx - 1)];
+                coeffs[(idx, idx)] = adjusted_diagonal;
+                rhs[idx] = adjusted_rhs;
             }
 
             // Construct matrix eqn for internal surface nodes only (and air node, after this loop)
-            matrix_a[(el_idx, el_idx)] = coeffs_adj[(idx_int_surface, idx_int_surface)];
-            vector_b[el_idx] = rhs_adj[idx_int_surface];
+            matrix_a[(el_idx, el_idx)] = coeffs[(idx_int_surface, idx_int_surface)];
+            vector_b[el_idx] = rhs[idx_int_surface];
 
             for (el_idx_other, _) in self.building_elements.iter().enumerate() {
                 if el_idx == el_idx_other {
@@ -867,8 +858,8 @@ impl Zone {
             // Loop over nodes, from internal inside node (i.e. inside node nearest to the
             // internal surface) to external surface, and calculate temperatures in sequence
             for idx in (idx_ext_surface..idx_int_surface).rev() {
-                temperatures[idx] = (rhs_adj[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
-                    / coeffs_adj[(idx, idx)];
+                temperatures[idx] = (rhs[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
+                    / coeffs[(idx, idx)];
             }
         }
 
@@ -2456,7 +2447,7 @@ mod tests {
         let expected = coeffs.clone().lu().solve(&rhs).unwrap();
 
         let zone = zone(thermal_bridging_objects, None).unwrap();
-        let result = &zone.fast_solver(coeffs, rhs).unwrap();
+        let result = &zone.fast_solver(&mut coeffs, &mut rhs).unwrap();
 
         for (i, expected_temp) in expected.data.as_vec().iter().enumerate() {
             assert_relative_eq!(result[i], expected_temp);
