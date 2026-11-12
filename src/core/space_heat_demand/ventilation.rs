@@ -1065,6 +1065,7 @@ struct Leaks {
     // In Python there are extra properties:
     // n_leak - this is now N_LEAK as it is constant
     // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
+    flow_coeff_for_leak: f64,
 }
 
 impl Leaks {
@@ -1092,7 +1093,7 @@ impl Leaks {
         altitude: f64,
         ventilation_zone_base_height: f64,
     ) -> Self {
-        Self {
+        let mut leak = Self {
             h_path: midheight,
             delta_p_leak_ref,
             a_roof: area_roof,
@@ -1103,7 +1104,10 @@ impl Leaks {
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
             z: midheight + ventilation_zone_base_height,
-        }
+            flow_coeff_for_leak: Default::default(),
+        };
+        leak.flow_coeff_for_leak = leak.calculate_flow_coeff_for_leak();
+        leak
     }
 
     fn calculate_flow_coeff_for_leak(&self) -> f64 {
@@ -1161,9 +1165,7 @@ impl Leaks {
             p_z_ref,
         );
 
-        let c_leak_path = Self::calculate_flow_coeff_for_leak(self);
-
-        // Airflow through leaks based on Equation 62
+        let c_leak_path = self.flow_coeff_for_leak;
         c_leak_path * f64::from(sign(delta_p_path)) * delta_p_path.abs().powf(N_LEAK)
     }
 
