@@ -2950,14 +2950,14 @@ impl InfiltrationVentilation {
             })
             .unzip();
         // Work out the average pitch, weighted by area.
-        let area_total = areas.iter().sum::<f64>();
+        let area_total = areas.iter().copied().sum_with_accumulator::<Sum2<_>>();
         let average_pitch = if !pitches.is_empty() {
             areas
                 .iter()
                 .map(|x| x / area_total)
                 .zip(pitches.iter())
                 .map(|(x, &y)| x * y)
-                .sum::<f64>()
+                .sum_with_accumulator::<Sum2<_>>()
         } else {
             0.
         };
@@ -2993,8 +2993,14 @@ impl InfiltrationVentilation {
                 (facades, roofs)
             });
 
-        let surface_area_facades = surface_area_facades_list.iter().sum::<f64>();
-        let surface_area_roof = surface_area_roof_list.iter().sum::<f64>();
+        let surface_area_facades = surface_area_facades_list
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
+        let surface_area_roof = surface_area_roof_list
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
 
         let total_volume = zones.values().map(|z| z.volume).sum::<f64>();
 

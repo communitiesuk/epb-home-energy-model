@@ -5543,8 +5543,7 @@ mod tests {
 
         // Reproduce Formula (16) from BS EN 15316-5 using the returned Q_ls_n values.
         // The unclamped result is exactly -6978472/8100000 ≈ -0.8615397530864198.
-        let q_x_in_adj = q_x_in_n.iter().sum::<f64>();
-        // Note - python uses fsum here but the test passes with sum (cheaper) so using that for now
+        let q_x_in_adj = q_x_in_n.iter().copied().sum_with_accumulator::<Sum2<_>>();
         let energy_surplus = (heater_layer..q_h_sto_s7.len())
             .map(|i| {
                 q_h_sto_s7[i]
