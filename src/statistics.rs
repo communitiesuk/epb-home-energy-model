@@ -1,6 +1,16 @@
 /// A simple statistics module with some utility functions such as calculation of percentiles.
 use interp::{interp, InterpMode};
 
+use std::sync::atomic::AtomicUsize;
+#[cfg(feature = "cache-np-interp")]
+use std::{collections::HashMap, sync::LazyLock};
+#[cfg(feature = "cache-np-interp")]
+use itertools::Itertools;
+#[cfg(feature = "cache-np-interp")]
+use ordered_float::OrderedFloat;
+#[cfg(feature = "cache-np-interp")]
+use parking_lot::RwLock;
+
 #[allow(dead_code)]
 pub fn percentile(mut numbers: Vec<f64>, percentile: usize) -> f64 {
     // use implementation from rust test::stats (currently unstable)
@@ -28,9 +38,58 @@ pub fn percentile(mut numbers: Vec<f64>, percentile: usize) -> f64 {
     lo + (hi - lo) * d
 }
 
+#[cfg(feature = "cache-np-interp")]
+#[derive(Eq, PartialEq, Clone, Debug, Hash)]
+struct CacheKey {
+    input: OrderedFloat<f64>,
+    x: Vec<OrderedFloat<f64>>,
+    y: Vec<OrderedFloat<f64>>,
+}
+pub static CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
+pub static CACHE_MISSES: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "cache-np-interp")]
+static CACHE: LazyLock<RwLock<HashMap<CacheKey, f64>>> = LazyLock::new(|| {
+    RwLock::new(HashMap::new())
+});
+
+pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
+    // dbg!("np_interp called with input:", input, "x:", x, "y:", y);
+
+    // TODO rounding floats could be more performant to make cache keys
+    // can we just make this into a string 
+
+    #[cfg(feature = "cache-np-interp")]
+    let cache_key = CacheKey {
+        input: OrderedFloat(input),
+        x: x.iter().map(|&f| OrderedFloat(f)).collect_vec(),
+        y: y.iter().map(|&f| OrderedFloat(f)).collect_vec(),
+    };
+
+    #[cfg(feature = "cache-np-interp")]
+    {
+        // scope this to avoid a deadlock
+        let cache = CACHE.read();
+        if let Some(&result) = cache.get(&cache_key) {
+            CACHE_HITS.fetch_add(1usize, std::sync::atomic::Ordering::Relaxed);
+            return result;
+        }
+    }
+
+    let result = np_interp_impl(input, x, y);
+
+    #[cfg(feature = "cache-np-interp")]
+    CACHE_MISSES.fetch_add(1usize, std::sync::atomic::Ordering::Relaxed);
+
+    #[cfg(feature = "cache-np-interp")]
+    CACHE.write().insert(cache_key, result);
+    result
+}
+
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
-pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
+pub fn np_interp_impl(input: f64, x: &[f64], y: &[f64]) -> f64 {
+
     if x.is_empty() {
         panic!("x cannot be empty");
     }
@@ -49,6 +108,7 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
 pub fn np_interp_with_extrapolate(input: f64, x: &[f64], y: &[f64]) -> f64 {
+
     if x.is_empty() {
         panic!("x cannot be empty");
     }

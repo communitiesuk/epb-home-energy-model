@@ -84,3 +84,4 @@ members = ["hem-lambda"]
 
 [features]
 default = ["clap"]
+cache-np-interp = []

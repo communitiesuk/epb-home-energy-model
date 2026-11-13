@@ -31,6 +31,7 @@ use crate::read_weather_file::{
     cibse_weather_data_to_external_conditions, epw_weather_data_to_external_conditions,
     ExternalConditions as ExternalConditionsFromFile, ReadWeatherFileResult,
 };
+use crate::statistics::{CACHE_HITS, CACHE_MISSES};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 pub use arcstr::ArcStr;
@@ -240,6 +241,8 @@ pub fn run_project_from_input_file(
     };
     let input = finalize(input)?;
 
+    dbg!("TESTING");
+
     let results = run_project(
         input,
         external_conditions_data,
@@ -262,6 +265,9 @@ pub fn run_project_from_input_file(
             detailed_output_heating_cooling,
         )?;
     }
+
+    dbg!(CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed));
+    dbg!(CACHE_MISSES.load(std::sync::atomic::Ordering::Relaxed));
 
     Ok(results)
 }
