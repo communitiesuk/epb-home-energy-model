@@ -1283,7 +1283,7 @@ impl Zone {
         } else if temp_free < temp_setpnt_heat
             && !relative_eq!(
                 temp_free,
-                temp_setpnt_cool,
+                temp_setpnt_heat,
                 epsilon = 1e-10,
                 max_relative = 1e-9
             )
