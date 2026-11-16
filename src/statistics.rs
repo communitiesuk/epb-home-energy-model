@@ -1,13 +1,6 @@
 /// A simple statistics module with some utility functions such as calculation of percentiles.
 use interp::{interp, InterpMode};
 
-#[cfg(feature = "cache-np-interp")]
-use std::{collections::HashMap, sync::LazyLock};
-#[cfg(feature = "cache-np-interp")]
-use ordered_float::OrderedFloat;
-#[cfg(feature = "cache-np-interp")]
-use parking_lot::RwLock;
-
 #[allow(dead_code)]
 pub fn percentile(mut numbers: Vec<f64>, percentile: usize) -> f64 {
     // use implementation from rust test::stats (currently unstable)
@@ -35,55 +28,9 @@ pub fn percentile(mut numbers: Vec<f64>, percentile: usize) -> f64 {
     lo + (hi - lo) * d
 }
 
-#[cfg(feature = "cache-np-interp")]
-#[derive(Eq, PartialEq, Clone, Debug, Hash)]
-struct CacheKey {
-    input: OrderedFloat<f64>,
-    x: Vec<OrderedFloat<f64>>,
-    y: Vec<OrderedFloat<f64>>,
-}
-
-#[cfg(feature = "cache-np-interp")]
-static CACHE: LazyLock<RwLock<HashMap<String, f64>>> = LazyLock::new(|| {
-    RwLock::new(HashMap::new())
-});
-
-pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
-    // dbg!("np_interp called with input:", input, "x:", x, "y:", y);
-
-    // TODO rounding floats could be more performant to make cache keys
-    // can we just make this into a string 
-
-    #[cfg(feature = "cache-np-interp")]
-    let cache_key = create_cache_key(input, x, y);
-
-    #[cfg(feature = "cache-np-interp")]
-    {
-        // scope this to avoid a deadlock
-        let cache = CACHE.read();
-        if let Some(&result) = cache.get(&cache_key) {
-            return result;
-        }
-    }
-
-    let result = np_interp_impl(input, x, y);
-
-    #[cfg(feature = "cache-np-interp")]
-
-    #[cfg(feature = "cache-np-interp")]
-    CACHE.write().insert(cache_key, result);
-    result
-}
-
-#[cfg(feature = "cache-np-interp")]
-fn create_cache_key(input: f64, x: &[f64], y: &[f64]) -> String {
-    format!("input: {}, x: {:?}, y: {:?}", input, x, y)
-}
-
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
-pub fn np_interp_impl(input: f64, x: &[f64], y: &[f64]) -> f64 {
-
+pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     if x.is_empty() {
         panic!("x cannot be empty");
     }
@@ -94,6 +41,21 @@ pub fn np_interp_impl(input: f64, x: &[f64], y: &[f64]) -> f64 {
 
     if x.len() != y.len() {
         panic!("x and y must be of equal length");
+    }
+
+     // if we only have 2 elements in the x and y arrays
+    // we can avoid calling the interp library
+    if x.len() == 2 && y.len() == 2 {
+        // clamp out-of-bounds values
+        if input <= x[0] {
+            return y[0];
+        }
+        if input >= x[1] {
+            return y[1];
+        }
+
+        // linear interpolation formula
+        return y[0] + (input - x[0]) * (y[1] - y[0]) / (x[1] - x[0]);
     }
 
     interp(x, y, input, &InterpMode::FirstLast)
