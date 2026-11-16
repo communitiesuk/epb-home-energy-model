@@ -1,11 +1,8 @@
 /// A simple statistics module with some utility functions such as calculation of percentiles.
 use interp::{interp, InterpMode};
 
-use std::sync::atomic::AtomicUsize;
 #[cfg(feature = "cache-np-interp")]
 use std::{collections::HashMap, sync::LazyLock};
-#[cfg(feature = "cache-np-interp")]
-use itertools::Itertools;
 #[cfg(feature = "cache-np-interp")]
 use ordered_float::OrderedFloat;
 #[cfg(feature = "cache-np-interp")]
@@ -45,11 +42,9 @@ struct CacheKey {
     x: Vec<OrderedFloat<f64>>,
     y: Vec<OrderedFloat<f64>>,
 }
-pub static CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
-pub static CACHE_MISSES: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "cache-np-interp")]
-static CACHE: LazyLock<RwLock<HashMap<CacheKey, f64>>> = LazyLock::new(|| {
+static CACHE: LazyLock<RwLock<HashMap<String, f64>>> = LazyLock::new(|| {
     RwLock::new(HashMap::new())
 });
 
@@ -60,18 +55,13 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     // can we just make this into a string 
 
     #[cfg(feature = "cache-np-interp")]
-    let cache_key = CacheKey {
-        input: OrderedFloat(input),
-        x: x.iter().map(|&f| OrderedFloat(f)).collect_vec(),
-        y: y.iter().map(|&f| OrderedFloat(f)).collect_vec(),
-    };
+    let cache_key = create_cache_key(input, x, y);
 
     #[cfg(feature = "cache-np-interp")]
     {
         // scope this to avoid a deadlock
         let cache = CACHE.read();
         if let Some(&result) = cache.get(&cache_key) {
-            CACHE_HITS.fetch_add(1usize, std::sync::atomic::Ordering::Relaxed);
             return result;
         }
     }
@@ -79,11 +69,15 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     let result = np_interp_impl(input, x, y);
 
     #[cfg(feature = "cache-np-interp")]
-    CACHE_MISSES.fetch_add(1usize, std::sync::atomic::Ordering::Relaxed);
 
     #[cfg(feature = "cache-np-interp")]
     CACHE.write().insert(cache_key, result);
     result
+}
+
+#[cfg(feature = "cache-np-interp")]
+fn create_cache_key(input: f64, x: &[f64], y: &[f64]) -> String {
+    format!("input: {}, x: {:?}, y: {:?}", input, x, y)
 }
 
 /// This function matches the behaviour Numpy interp
