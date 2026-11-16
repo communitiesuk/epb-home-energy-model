@@ -1078,7 +1078,7 @@ dependencies = [
  "anyhow",
  "home-energy-model",
  "lambda_http",
- "parking_lot 0.12.5",
+ "parking_lot 0.13.0",
  "serde_json",
  "tokio",
  "uuid",
