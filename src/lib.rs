@@ -57,151 +57,6 @@ use tracing::{debug, instrument};
 pub const HEM_VERSION: &str = "1.0.0a9";
 pub const HEM_VERSION_DATE: &str = "2026-07-29";
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-pub enum OutputFormat {
-    Json,
-    Csv,
-}
-
-struct StackString {
-    buf: [u8; 32],
-    len: usize,
-}
-
-impl StackString {
-    const fn new() -> Self {
-        Self {
-            buf: [0; 32],
-            len: 0,
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
-    }
-
-    fn clear(&mut self) {
-        self.len = 0;
-    }
-}
-
-impl Write for StackString {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let remaining = self.buf.len() - self.len;
-        let amt = std::cmp::min(remaining, buf.len());
-        self.buf[self.len..self.len + amt].copy_from_slice(&buf[..amt]);
-        self.len += amt;
-        Ok(amt)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-enum FormattedValue<'a> {
-    Borrowed(&'a str),
-    Owned(StackString),
-}
-
-impl<'a> AsRef<str> for FormattedValue<'a> {
-    fn as_ref(&self) -> &str {
-        match self {
-            FormattedValue::Borrowed(s) => s,
-            FormattedValue::Owned(b) => b.as_str(),
-        }
-    }
-}
-
-impl From<StackString> for FormattedValue<'_> {
-    fn from(s: StackString) -> Self {
-        FormattedValue::Owned(s)
-    }
-}
-
-impl<'a> From<&'a str> for FormattedValue<'a> {
-    fn from(s: &'a str) -> Self {
-        FormattedValue::Borrowed(s)
-    }
-}
-
-fn format_value<'a>(value: &'a StringOrNumber, buf: &'a mut StackString) -> &'a str {
-    match value {
-        StringOrNumber::Float(f) => {
-            if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
-                "0.0"
-            } else {
-                // Round any floating point numbers to 10 significant figures, like the Python does
-                buf.clear();
-                let _ = write!(buf, "{:.9e}", f);
-                buf.as_str()
-            }
-        }
-        StringOrNumber::Integer(int) => {
-            buf.clear();
-            let _ = write!(buf, "{}", int);
-            buf.as_str()
-        }
-        StringOrNumber::String(s) => s.as_str(),
-    }
-}
-
-fn write_formatted_row(
-    row: &[StringOrNumber],
-    writer: &mut csv::Writer<impl Write>,
-) -> Result<(), std::io::Error> {
-    // we don't expect more than 1500 columns (some files are very wide!!)
-    const MAX_COLS: usize = 1_500;
-
-    let mut buffers = [const { StackString::new() }; MAX_COLS];
-
-    let record = row
-        .iter()
-        .zip(buffers.iter_mut())
-        .enumerate()
-        .map(|(i, (val, buf))| {
-            if i < MAX_COLS {
-                format_value(val, buf)
-            } else {
-                ""
-            }
-        });
-
-    writer.write_record(record)?;
-
-    Ok(())
-}
-
-#[derive(Serialize)]
-pub struct HemResponse {
-    #[serde(flatten)]
-    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
-}
-
-impl HemResponse {
-    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
-        Self {
-            payload: Box::new(payload),
-        }
-    }
-
-    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.payload.serialize(serializer)
-    }
-}
-
-pub enum RunInput<'a> {
-    Json(Value),
-    Read(Box<dyn Read + 'a>),
-}
-
-impl<'a, T: Read + 'a> From<T> for RunInput<'a> {
-    fn from(value: T) -> Self {
-        RunInput::Read(Box::new(value))
-    }
-}
-
 #[instrument(skip_all)]
 pub fn run_project_from_input_file(
     input: RunInput<'_>,
@@ -376,6 +231,42 @@ pub fn run_project(
         })?
 }
 
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum OutputFormat {
+    Json,
+    Csv,
+}
+
+#[derive(Serialize)]
+pub struct HemResponse {
+    #[serde(flatten)]
+    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
+}
+
+impl HemResponse {
+    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
+        Self {
+            payload: Box::new(payload),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.payload.serialize(serializer)
+    }
+}
+
+pub enum RunInput<'a> {
+    Json(Value),
+    Read(Box<dyn Read + 'a>),
+}
+
+impl<'a, T: Read + 'a> From<T> for RunInput<'a> {
+    fn from(value: T) -> Self {
+        RunInput::Read(Box::new(value))
+    }
+}
+
 fn read_tariff_file(input: &mut Input, tariff_data_file: Option<&str>) -> anyhow::Result<()> {
     let tariff_data_file = if let Some(tariff_data_file) = tariff_data_file {
         tariff_data_file
@@ -393,6 +284,115 @@ fn read_tariff_file(input: &mut Input, tariff_data_file: Option<&str>) -> anyhow
             "prices": prices,
         }))?);
     }
+
+    Ok(())
+}
+
+struct StackString {
+    buf: [u8; 32],
+    len: usize,
+}
+
+impl StackString {
+    const fn new() -> Self {
+        Self {
+            buf: [0; 32],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+}
+
+impl Write for StackString {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.buf.len() - self.len;
+        let amt = std::cmp::min(remaining, buf.len());
+        self.buf[self.len..self.len + amt].copy_from_slice(&buf[..amt]);
+        self.len += amt;
+        Ok(amt)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+enum FormattedValue<'a> {
+    Borrowed(&'a str),
+    Owned(StackString),
+}
+
+impl<'a> AsRef<str> for FormattedValue<'a> {
+    fn as_ref(&self) -> &str {
+        match self {
+            FormattedValue::Borrowed(s) => s,
+            FormattedValue::Owned(b) => b.as_str(),
+        }
+    }
+}
+
+impl From<StackString> for FormattedValue<'_> {
+    fn from(s: StackString) -> Self {
+        FormattedValue::Owned(s)
+    }
+}
+
+impl<'a> From<&'a str> for FormattedValue<'a> {
+    fn from(s: &'a str) -> Self {
+        FormattedValue::Borrowed(s)
+    }
+}
+
+fn format_value<'a>(value: &'a StringOrNumber, buf: &'a mut StackString) -> &'a str {
+    match value {
+        StringOrNumber::Float(f) => {
+            if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
+                "0.0"
+            } else {
+                // Round any floating point numbers to 10 significant figures, like the Python does
+                buf.clear();
+                let _ = write!(buf, "{:.9e}", f);
+                buf.as_str()
+            }
+        }
+        StringOrNumber::Integer(int) => {
+            buf.clear();
+            let _ = write!(buf, "{}", int);
+            buf.as_str()
+        }
+        StringOrNumber::String(s) => s.as_str(),
+    }
+}
+
+fn write_formatted_row(
+    row: &[StringOrNumber],
+    writer: &mut csv::Writer<impl Write>,
+) -> Result<(), std::io::Error> {
+    // we don't expect more than 1500 columns (some files are very wide!!)
+    const MAX_COLS: usize = 1_500;
+
+    let mut buffers = [const { StackString::new() }; MAX_COLS];
+
+    let record = row
+        .iter()
+        .zip(buffers.iter_mut())
+        .enumerate()
+        .map(|(i, (val, buf))| {
+            if i < MAX_COLS {
+                format_value(val, buf)
+            } else {
+                ""
+            }
+        });
+
+    writer.write_record(record)?;
 
     Ok(())
 }
