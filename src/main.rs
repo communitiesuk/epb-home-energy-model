@@ -15,7 +15,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct SapArgs {
+struct HemArgs {
     input_file: String,
     #[command(flatten)]
     weather_file: WeatherFileType,
@@ -59,7 +59,7 @@ struct WeatherFileType {
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = SapArgs::parse();
+    let args = HemArgs::parse();
 
     // set up basic tracing
     let tracing_subscriber = {
