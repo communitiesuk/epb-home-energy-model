@@ -22,7 +22,6 @@ to demonstrate complete 1:1 behavioural parity with the specification code.
 
 ## Running the engine
 
-
 ### From CLI
 
 Requires the `rustup` toolchain to use. ([Instructions](https://rustup.rs) for installation. For macOS, don't use
@@ -64,6 +63,7 @@ cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
 ```
 
 You can also test the lambda by running it locally:
+
 ```bash
 cargo lambda watch --package hem-lambda
 ```
@@ -77,8 +77,8 @@ Then you can use Postman for example to call it (e.g. http://localhost:9000/lamb
 If you've done work in a pair or ensemble why not add your co-author(s) to the commit? This way everyone involved is
 given credit and people know who they can approach for questions about specific commits. To make this easy there is a
 commit template with a list of regular contributors to this code base. You will find it at the root of this
-project: `commit_template.txt`. Each row represents a possible co-author, however everyone is commented out by default (
-using `#`), and any row that is commented out will not show up in the commit.
+project: `commit_template.txt`. Each row represents a possible co-author, however everyone is commented out by default
+(using `#`), and any row that is commented out will not show up in the commit.
 
 #### Editing the template
 
