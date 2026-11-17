@@ -9,7 +9,8 @@ methodology for calculating the energy performance of buildings that is currentl
 instruction from the UK Department for Energy Security and Net Zero (DESNZ).
 
 This project constitutes a port into Rust of
-the [calculation engine](hhttps://dev.azure.com/Sustenic/Home%20Energy%20Model%20Reference/_git/Home%20Energy%20Model) written in Python produced as
+the [calculation engine](https://dev.azure.com/Sustenic/Home%20Energy%20Model%20Reference/_git/Home%20Energy%20Model)
+written in Python produced as
 a candidate specification of the Home Energy Model.
 
 Its purpose is to provide a library that is significantly more performant than the Python specification code, as well as
