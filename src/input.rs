@@ -5643,7 +5643,6 @@ pub enum HeatBattery {
         /// Heat capacity of storage above phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_above_Phase_transition")]
         #[validate(exclusive_minimum = 0.)]
-        #[validate(exclusive_minimum = 0.)]
         heat_storage_kj_per_k_above_phase_transition: f64,
 
         /// Heat capacity of storage below phase transition (unit: kJ/K)
