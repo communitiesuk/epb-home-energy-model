@@ -11,6 +11,7 @@ pub trait OutputWriter: Debug + Sync + Send + Sized + Clone {
         location_key: &str,
         file_extension: &str,
     ) -> anyhow::Result<impl Write>;
+
     /// Whether this output can be considered a no-op and therefore that any code that only writes to the output can be skipped.
     fn is_noop(&self) -> bool {
         false
@@ -26,13 +27,15 @@ pub trait OutputWriter: Debug + Sync + Send + Sized + Clone {
 pub struct FileOutputWriter {
     directory_path: PathBuf,
     file_template: String,
+    is_noop: bool,
 }
 
 impl FileOutputWriter {
-    pub fn new(directory_path: PathBuf, file_template: String) -> Self {
+    pub fn new(directory_path: PathBuf, file_template: String, is_noop: bool) -> Self {
         Self {
             directory_path,
             file_template,
+            is_noop,
         }
     }
 }
@@ -48,10 +51,15 @@ impl OutputWriter for FileOutputWriter {
         ))?))
     }
 
+    fn is_noop(&self) -> bool {
+        self.is_noop
+    }
+
     fn with_file_template(&self, file_template: String) -> Self {
         Self {
             directory_path: self.directory_path.clone(),
             file_template,
+            is_noop: self.is_noop,
         }
     }
 }

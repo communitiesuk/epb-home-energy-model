@@ -26,9 +26,16 @@ struct HemArgs {
         value_enum,
         num_args = 1..=2,
         default_value = "csv",
-        help = "output format(s): csv, json, or both; default to csv"
+        help = "output format(s): `csv`, `json`, or both; default to csv"
     )]
     output: Option<Vec<OutputFormat>>,
+    #[clap(
+        long,
+        short,
+        default_value_t = false,
+        help = "Don't write out any output files"
+    )]
+    no_write: bool,
     #[clap(
         long,
         default_value_t = false,
@@ -86,7 +93,12 @@ fn main() -> anyhow::Result<()> {
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
-    let file_output = FileOutputWriter::new(output_path, format!("{input_file_name}__{{}}.{{}}"));
+
+    let file_output = FileOutputWriter::new(
+        output_path,
+        format!("{input_file_name}__{{}}.{{}}"),
+        args.no_write,
+    );
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {
         WeatherFileType {
