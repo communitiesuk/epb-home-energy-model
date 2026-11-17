@@ -37,10 +37,11 @@ Fully running the engine requires a weather file in EPW format and an input JSON
 stable):
 
 ```
-cargo run --release --features="clap indicatif" -- path/to/input.json -e path/to/weather_file.epw
+cargo run --release --features="cli indicatif" -- path/to/input.json -e path/to/weather_file.epw
 ```
 
-The `clap` feature above is mandatory. The `indicatif` feature switches on the output of a progress bar.
+The `cli` feature above is mandatory for a run from the CLI. The `indicatif` feature switches on the output of a
+progress bar.
 
 ### In AWS Lambda
 

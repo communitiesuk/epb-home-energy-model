@@ -49,7 +49,7 @@ serde_valid = "3.2.0"
 smallvec = "1.16.4"
 thiserror = "2.0.18"
 tracing = "0.1.44"
-tracing-subscriber = "0.3.23"
+tracing-subscriber = { version = "0.3.23", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
@@ -66,7 +66,7 @@ doctest = false
 name = "hem"
 path = "src/main.rs"
 doc = false
-required-features = ["clap"]
+required-features = ["cli"]
 
 [profile.release]
 opt-level = 3
@@ -78,6 +78,9 @@ debug = true
 
 [profile.samply]
 inherits = "profiling"
+
+[features]
+cli = ["dep:clap", "dep:tracing-subscriber"]
 
 [workspace]
 members = ["hem-lambda"]

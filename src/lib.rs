@@ -226,7 +226,7 @@ pub fn run_project(
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum OutputFormat {
     Json,
     Csv,
