@@ -1,0 +1,259 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/CodSpeedHQ/codspeed/refs/heads/main/schemas/codspeed.schema.json
+
+$schema: https://raw.githubusercontent.com/CodSpeedHQ/codspeed/refs/heads/main/schemas/codspeed.schema.json
+
+benchmarks:
+  - name: long demo file (window opening for cooling)
+    exec: ./target/release/hem examples/input/core/long/SAP11_deck_flat_nat_vent_with_window_opening_for_cooling.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: long demo file (smart hot water tank)
+    exec: ./target/release/hem examples/input/core/long/SAP11_deck_smart_hot_water_tank.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_bottomup)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_bottomup__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_bottomup_with_edge_insulation)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_bottomup_with_edge_insulation__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_combi_boiler)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_combi_boiler__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_default_hw_sched_allday)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_default_hw_sched_allday__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_default_hw_sched_heatinghours)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_default_hw_sched_heatinghours__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_heat_battery)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_heat_battery__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_hp_with_advancedstart)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_hp_with_advancedstart__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_hp_with_buffer_tank)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_hp_with_buffer_tank__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_hp_with_glycol_sink)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_hp_with_glycol_sink__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_multiple_intermittent_MEV)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_multiple_intermittent_MEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_party_wall)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_party_wall__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_point_of_use_water_heating)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_point_of_use_water_heating__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_smart_hot_water_tank)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_smart_hot_water_tank__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_storage_tank_held_at_setpnt)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_storage_tank_held_at_setpnt__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_two_PV_arrays)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_two_PV_arrays__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_two_storey)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_two_storey__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_U_values)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_U_values__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_FHS_with_setback)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_with_setback__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (demo_without_space_cool)
+    exec: ./target/release/hem examples/input/fhs/demo_FHS_without_space_cool__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-F-MS-02-ESH-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-F-MS-02-ESH-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-F-MS-02-HN-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-F-MS-02-HN-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-Combi)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-Combi__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-Combi-gas)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-Combi-gas__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-Combi-lpg-bottled)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-Combi-lpg-bottled__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-Combi-lpg-bulk)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-Combi-lpg-bulk__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-SHWT)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-SHWT__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-Blr-cMEV-ST)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-Blr-cMEV-ST__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-DE-cMEV-SHWT)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-DE-cMEV-SHWT__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-DE-cMEV-SHWT-div)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-DE-cMEV-SHWT-div__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-DE-cMEV-ST)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-DE-cMEV-ST__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-DE-cMEV-ST-div)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-DE-cMEV-ST-div__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-DE-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-DE-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-ESH-cMEV-window-reveal-shading)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-ESH-cMEV-window-reveal-shading__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-ESB-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-ESH-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HB-cMEV-dry-core)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HB-cMEV-dry-core__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HB-cMEV-dry-core-space)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HB-cMEV-dry-core-space__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HB-cMEV-hydronic-charging)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HB-cMEV-hydronic-charging__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV-5thgen)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV-5thgen__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV-DHW-from-HIU)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV-DHW-from-HIU__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV-direct)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV-direct__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV-non-sleeved)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV-non-sleeved__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HN-cMEV-sfp)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HN-cMEV-sfp__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-bypass)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-bypass__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-DE-space)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-DE-space__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-EB)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-EB__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-EB-100eff)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-EB-100eff__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-EB-DNO-limit)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-EB-DNO-limit__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-exhaust-air-mix)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-exhaust-air-mix__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-ExhaustairMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-ExhaustairMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-ExhaustairMVHR)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-ExhaustairMVHR__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-fan-coil)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-fan-coil__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-ground)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-ground__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-HWOHP)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-HWOHP__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-HWOHP-integral)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-HWOHP-integral__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-HWOHP-SHWT)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-HWOHP-SHWT__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-SHWT)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-SHWT__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-smart-air-bricks)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-smart-air-bricks__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-solar-thermal)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-solar-thermal__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-ST)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-ST__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-TTZC)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-TTZC__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-underfloor)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-underfloor__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-warm-air)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-warm-air__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-water)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-water__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-cMEV-WWHR-C)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-cMEV-WWHR-C__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-iMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-backup-none)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-backup-none__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-backup-substitute)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-backup-substitute__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-DE)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-DE__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-pre-heat)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-pre-heat__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-solar-pre-heat)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-solar-pre-heat__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-HP-iMEV-wwhrs-storage-tank)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-iMEV-wwhrs-storage-tank__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+    options:
+      max-time: 5s
+
+  - name: FHS (DESN-H-End-02-HP-MVHR)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-MVHR__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-MVHR-basement)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-MVHR-basement__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HP-MVHR-rectangular)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HP-MVHR-rectangular__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HybridHP-cMEV)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HybridHP-cMEV__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
+
+  - name: FHS (DESN-H-End-02-HybridHP-dMEV-pulse)
+    exec: ./target/release/hem examples/input/fhs/DESN-H-End-02-HybridHP-dMEV-pulse__FHS__preproc.json --CIBSE-weather-file tests/data/London_weather_CIBSE_format.csv --tariff-file examples/tariff_data/tariff_data_25-06-2024.csv -n
