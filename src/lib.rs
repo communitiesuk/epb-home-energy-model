@@ -85,16 +85,7 @@ pub fn run_project_from_input_file(
             }
         }
 
-        let input: Input = serde_json::from_value(input).map_err(|err| anyhow!(err))?;
-
-        input.validate().map_err(|e| {
-            anyhow!(
-                "Input passed core HEM schema but failed additional constraint checks:\n{}",
-                errors_to_human_string(&e)
-            )
-        })?;
-
-        Ok(input)
+        serde_json::from_value(input).map_err(|err| anyhow!(err))
     }
 
     let input = match input {
@@ -139,6 +130,14 @@ pub fn run_project(
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> Result<CalculationResult, HemError> {
+    // first, validate the input using serde_valid constraints to confirm these are met
+    input.validate().map_err(|e| {
+        HemError::InvalidRequest(anyhow!(
+            "Input passed core HEM schema but failed additional constraint checks:\n{}",
+            errors_to_human_string(&e)
+        ))
+    })?;
+
     read_tariff_file(&mut input, tariff_data_file)?;
 
     catch_unwind(AssertUnwindSafe(|| {
