@@ -43,6 +43,7 @@ use jsonschema::{validator, Validator};
 pub use parking_lot::{Mutex as ParkingLotMutex, RwLock as ParkingLotRwLock};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
+use serde_valid::{validation::Errors, Validate};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -74,7 +75,7 @@ pub fn run_project_from_input_file(
             let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
             if !evaluation.flag().valid {
                 bail!(
-                    "Wrapper formed invalid JSON for the core schema: {}",
+                    "Input JSON was not found to be valid for the core HEM schema: {}",
                     evaluation
                         .iter_errors()
                         .map(|e| format!("{}: {}", e.instance_location, e.error))
@@ -84,7 +85,16 @@ pub fn run_project_from_input_file(
             }
         }
 
-        serde_json::from_value(input).map_err(|err| anyhow!(err))
+        let input: Input = serde_json::from_value(input).map_err(|err| anyhow!(err))?;
+
+        input.validate().map_err(|e| {
+            anyhow!(
+                "Input passed core HEM schema but failed additional constraint checks:\n{}",
+                errors_to_human_string(&e)
+            )
+        })?;
+
+        Ok(input)
     }
 
     let input = match input {
@@ -1738,6 +1748,47 @@ pub fn load_weather_data(
         WeatherFileType::Epw => epw_weather_data_to_external_conditions(input),
         WeatherFileType::Cibse => cibse_weather_data_to_external_conditions(input),
     }
+}
+
+fn format_serde_valid_errors(errors: &Errors, prefix: &str, out: &mut Vec<String>) {
+    match errors {
+        Errors::Object(obj_errors) => {
+            for err in &obj_errors.errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+            for (field, sub_errors) in &obj_errors.properties {
+                let next_prefix = if prefix.is_empty() {
+                    field.clone()
+                } else {
+                    format!("{prefix}.{field}").into()
+                };
+                format_serde_valid_errors(sub_errors, &next_prefix, out);
+            }
+        }
+        Errors::Array(arr_errors) => {
+            for err in &arr_errors.errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+            for (index, sub_errors) in &arr_errors.items {
+                let next_prefix = format!("{prefix}[{index}]");
+                format_serde_valid_errors(sub_errors, &next_prefix, out);
+            }
+        }
+        Errors::NewType(newtype_errors) => {
+            for err in newtype_errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+        }
+    }
+}
+
+fn errors_to_human_string(errors: &Errors) -> String {
+    let mut lines = Vec::new();
+    format_serde_valid_errors(errors, "", &mut lines);
+    lines.join("\n")
 }
 
 #[validator(path = "./schemas/core-input.schema.json")]

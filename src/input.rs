@@ -1185,7 +1185,6 @@ pub struct EnergySupplyDetails {
     pub(crate) threshold_prices_export: Option<[f64; 12]>,
 
     /// Grid price below which battery is permitted to charge from grid (monthly values) (unit: p/kWh)
-    #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_prices: Option<[f64; 12]>,
 
     /// Maximum power limit for importing from the grid to charge batteries,
@@ -5868,8 +5867,12 @@ fn validate_at_least_one_efficiency_set(
 fn validate_flow_rates_and_efficiencies_length(
     data: &WasteWaterHeatRecoveryDetails,
 ) -> Result<(), serde_valid::validation::Error> {
-    // Validate system A (always required)
-    if data.flow_rates.len() != data.system_a_efficiencies.iter().flatten().count() {
+    // Validate system A
+    if data
+        .system_a_efficiencies
+        .as_ref()
+        .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
+    {
         return custom_validation_error(
             "flow_rates and system_a_efficiencies must have the same length",
         );
