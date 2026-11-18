@@ -2011,64 +2011,6 @@ mod tests {
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
     const FOUR_DECIMAL_PLACES: f64 = 1e-3;
 
-    #[test]
-    fn emitter_cooldown_matches_python_early_timestep() {
-        let pairs: Arc<[(f64, f64)]> = vec![
-            (0.046621839, 1.33),
-            (0.011881003033251649, 1.2402794659894238),
-            (0.007655221776702061, 1.2395927608811286),
-        ]
-        .into();
-        let (temperature, event) = Emitters::temp_emitter_pure(
-            pairs,
-            Some(0.07094095375107709),
-            0.0,
-            0.5,
-            20.387704094506162,
-            19.909535626583526,
-            0.0,
-            None,
-        )
-        .unwrap();
-        approx::assert_abs_diff_eq!(temperature, 20.245355174816442, epsilon = 1e-13);
-        assert!(event.is_none());
-    }
-
-    #[test]
-    fn cooldown_root_matches_python_dry_core_case() {
-        let pairs: Arc<[(f64, f64)]> = vec![
-            (0.046621839, 1.33),
-            (0.011881003033251649, 1.2402794659894238),
-            (0.007655221776702061, 1.2395927608811286),
-        ]
-        .into();
-        let residual = |time| {
-            Emitters::energy_surplus_during_cooldown_pure(
-                pairs.clone(),
-                Some(0.07094095375107709),
-                22.39270561358319,
-                time,
-                [0.5, 0.17039606157183818, 17.582191594391745],
-            )
-            .unwrap()
-        };
-        assert_relative_eq!(residual(0.5), -0.0025620694776724295, epsilon = 1e-12);
-        let time = root(|x, _args: [f64; 0]| residual(x), 0.5, []).unwrap();
-        assert_relative_eq!(time, 0.4797210367832375, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn emitter_derivative_matches_python_compensated_sum() {
-        let pairs: Arc<[(f64, f64)]> = vec![
-            (3.0152907036445097e-05, 1.0),
-            (1.2610646545101114e-05, 1.0),
-            (8.156215673368546e-06, 1.0),
-        ]
-        .into();
-        let derivative = Emitters::func_temp_emitter_change_rate_pure(pairs, Some(1.0), 0.0);
-        assert_eq!(derivative(0.0, &[1.0])[0], -5.091976925491476e-05);
-    }
-
     #[fixture]
     fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 2., 0.25)

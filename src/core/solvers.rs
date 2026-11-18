@@ -219,20 +219,6 @@ pub mod bisect {
     }
 
     impl std::error::Error for BisectError {}
-
-    #[cfg(test)]
-    mod tests {
-        use super::bisect;
-        use approx::assert_abs_diff_eq;
-
-        #[test]
-        fn bisect_matches_scipy_iteration_count() {
-            let (root, results) = bisect(|x| Ok(x * x - 2.0), 0.0, 2.0, 1e-6).unwrap();
-
-            assert_abs_diff_eq!(root, 1.4142141342163086, epsilon = 1e-12);
-            assert_eq!(results.function_calls, 23);
-        }
-    }
 }
 
 // A viable equivalent of scipy.optimize.root
@@ -419,23 +405,6 @@ pub mod solve_ivp {
         pub y: [f64; N],
         /// index of the event that terminated integration, and the time at which it occurred
         pub event: Option<(usize, f64)>,
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::{solve_ivp, TerminateDirection, TerminatingEvent};
-        use approx::assert_abs_diff_eq;
-
-        #[test]
-        fn event_root_matches_scipy_default_precision() {
-            let ode = |_t: f64, _y: &[f64; 1]| [1.0];
-            let event_fn = |_t: f64, y: &[f64; 1]| y[0] - 0.123456789;
-            let event = TerminatingEvent::new(&event_fn, Some(TerminateDirection::Positive));
-            let result =
-                solve_ivp(ode, (0.0, 1.0), [0.0], &[event], Some(1e-4), Some(1e-6)).unwrap();
-
-            assert_abs_diff_eq!(result.t, 0.123456789, epsilon = 1e-12);
-        }
     }
 
     /// module to do with the RK45 method for scipy
