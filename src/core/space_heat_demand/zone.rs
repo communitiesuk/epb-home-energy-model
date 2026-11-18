@@ -1477,7 +1477,7 @@ fn isclose(a: &[f64], b: &[f64], rtol: Option<f64>, atol: Option<f64>) -> bool {
     let atol = atol.unwrap_or(1e-8);
     a.iter()
         .zip(b)
-        .all(|(a, b)| relative_eq!(a, b, max_relative = rtol, epsilon = atol))
+        .all(|(a, b)| (a - b).abs() <= atol + rtol * b.abs())
 }
 
 #[derive(Debug, Error)]
