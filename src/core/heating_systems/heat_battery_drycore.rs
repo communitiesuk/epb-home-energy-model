@@ -485,8 +485,10 @@ impl HeatStorageDryCore {
 
         let power_interp = LinearInterpolator::new(soc_array, &power_func(soc_array));
 
-        let power_min_interp =
-            LinearInterpolator::new(&self.soc_min_array, &(self.power_min_func)(soc_array));
+        let power_min_interp = LinearInterpolator::new(
+            &self.soc_min_array,
+            &(self.power_min_func)(&self.soc_min_array),
+        );
 
         // Charging: determine the maximum power available for charging
         let target_charge = self.target_electric_charge(timestep);
