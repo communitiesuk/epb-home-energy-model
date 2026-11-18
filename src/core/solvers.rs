@@ -523,7 +523,7 @@ pub mod solve_ivp {
                 for i in 0..N {
                     let mut dy = 0.;
                     for j in 0..s {
-                        dy += k[j][i] * A[s][j];
+                        dy = k[j][i].mul_add(A[s][j], dy);
                     }
                     y_stage[i] += dy * h;
                 }
@@ -535,7 +535,7 @@ pub mod solve_ivp {
             for i in 0..N {
                 let mut dy = 0.;
                 for j in 0..N_STAGES {
-                    dy += k[j][i] * B[j];
+                    dy = k[j][i].mul_add(B[j], dy);
                 }
                 y_new[i] += dy * h;
             }
@@ -705,7 +705,7 @@ pub mod solve_ivp {
                     let scale = self.atol + y[i].abs().max(y_new[i].abs()) * self.rtol;
                     let mut error = 0.;
                     for (k_row, e) in self.k.iter().zip(E) {
-                        error += k_row[i] * e;
+                        error = k_row[i].mul_add(e, error);
                     }
                     error * h / scale
                 }))
@@ -717,7 +717,7 @@ pub mod solve_ivp {
                 for (i, q_row) in q.iter_mut().enumerate() {
                     for (col, q_val) in q_row.iter_mut().enumerate() {
                         for (k_row, p_row) in self.k.iter().zip(P) {
-                            *q_val += k_row[i] * p_row[col];
+                            *q_val = k_row[i].mul_add(p_row[col], *q_val);
                         }
                     }
                 }
