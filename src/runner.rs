@@ -116,30 +116,50 @@ pub mod aws_step_functions {
     }
 }
 
-// pub async fn run_map_express<T, R>(
-//     client: &Client,
-//     state_machine_arn: &str,
-//     items: Vec<T>,
-// ) -> anyhow::Result<Vec<R>>
-// where
-//     T: Serialize,
-//     R: for<'de> Deserialize<'de>,
-// {
-//     let out = client
-//         .start_sync_execution()
-//         .state_machine_arn(state_machine_arn)
-//         .input(serde_json::to_string(&BatchInput { items })?)
-//         .send()
-//         .await?;
-//
-//     if out.status().as_str() != "SUCCEEDED" {
-//         return Err(anyhow::anyhow!(
-//             "execution ended with {}: {:?}",
-//             out.status().as_str(),
-//             out.cause()
-//         ));
-//     }
-//
-//     let output = out.output().ok_or_else(|| anyhow::anyhow!("missing output"))?;
-//     Ok(serde_json::from_str(output)?)
-// }
+#[cfg(feature = "rayon")]
+pub mod rayon {
+    use crate::output_writer::OutputWriter;
+    use crate::runner::{BatchError, RunsBatchedHemAsync};
+    use crate::{CalculationResult, RunInput};
+    use rayon::prelude::*;
+    use std::collections::HashMap;
+    use std::hash::Hash;
+    use std::marker::PhantomData;
+    use std::sync::Arc;
+
+    struct RayonRunner<'a, T> {
+        output_writer: &'a dyn OutputWriter,
+        _key: PhantomData<T>,
+    }
+
+    impl<'a, T> RayonRunner<'a, T> {
+        pub fn new(output_writer: &'a dyn OutputWriter) -> Self<'a> {
+            Self(PhantomData)
+        }
+    }
+
+    impl<T: Hash + Eq + Send + Sync + Clone> RunsBatchedHemAsync for RayonRunner<T> {
+        type Key = T;
+
+        async fn run_batched_hem(
+            &self,
+            inputs: &HashMap<Self::Key, RunInput<'_>>,
+        ) -> Result<HashMap<Self::Key, CalculationResult>, BatchError> {
+            inputs
+                .par_iter()
+                .map(|(key, input)| {
+                    Ok::<(Self::Key, CalculationResult), BatchError>((
+                        key.clone(),
+                        CalculationResult::new(
+                            Arc::new(
+                                serde_json::from_str(input.payload.get())
+                                    .map_err(|_| BatchError)?,
+                            ),
+                            input.output,
+                        ),
+                    ))
+                })
+                .collect::<Result<_, _>>()
+        }
+    }
+}
