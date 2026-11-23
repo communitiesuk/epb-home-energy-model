@@ -694,7 +694,7 @@ impl Window {
 #[derive(Clone, Debug)]
 struct WindowPart {
     a_w_max: f64,
-    _z: f64,
+    z: f64,
     divisions: Vec<WindowDivision>,
 }
 
@@ -713,7 +713,7 @@ impl WindowPart {
     ) -> Self {
         Self {
             a_w_max: max_opening_area,
-            _z: midheight + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
             divisions: (1..(_N_W_DIV + 2))
                 .map(|j| {
                     WindowDivision::new(
@@ -775,7 +775,7 @@ impl WindowPart {
         let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
-            self._z,
+            self.z,
             wind_direction,
             orientation,
             pitch,
