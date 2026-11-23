@@ -796,7 +796,7 @@ impl Emitters {
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
-                .sum::<f64>())
+                .sum_with_accumulator::<Sum2<_>>())
                 / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")]
         }
     }
@@ -1266,7 +1266,6 @@ impl Emitters {
             let c_n_pairs = self.extract_c_n_pairs();
             let thermal_mass = self.thermal_mass;
             let temp_emitter_prev = self.temp_emitter_prev();
-
             let root_func = Box::new(move |time_cooldown, args| {
                 let c_n_pairs = c_n_pairs.clone();
                 Self::energy_surplus_during_cooldown_pure(

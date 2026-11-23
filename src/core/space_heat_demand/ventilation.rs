@@ -694,7 +694,7 @@ impl Window {
 #[derive(Clone, Debug)]
 struct WindowPart {
     a_w_max: f64,
-    _z: f64,
+    z: f64,
     divisions: Vec<WindowDivision>,
 }
 
@@ -713,7 +713,7 @@ impl WindowPart {
     ) -> Self {
         Self {
             a_w_max: max_opening_area,
-            _z: midheight + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
             divisions: (1..(_N_W_DIV + 2))
                 .map(|j| {
                     WindowDivision::new(
@@ -775,7 +775,7 @@ impl WindowPart {
         let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
-            self._z,
+            self.z,
             wind_direction,
             orientation,
             pitch,
@@ -1062,10 +1062,9 @@ struct Leaks {
     _altitude: f64,
     p_a_alt: f64,
     z: f64,
-    // In Python there are extra properties:
+    // In Python there is an extra property:
     // n_leak - this is now N_LEAK as it is constant
-    // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
-    flow_coeff_for_leak: f64,
+    c_leak_path: f64,
 }
 
 impl Leaks {
@@ -1104,9 +1103,9 @@ impl Leaks {
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
             z: midheight + ventilation_zone_base_height,
-            flow_coeff_for_leak: Default::default(),
+            c_leak_path: Default::default(),
         };
-        leak.flow_coeff_for_leak = leak.calculate_flow_coeff_for_leak();
+        leak.c_leak_path = leak.calculate_flow_coeff_for_leak();
         leak
     }
 
@@ -1165,8 +1164,7 @@ impl Leaks {
             p_z_ref,
         );
 
-        let c_leak_path = self.flow_coeff_for_leak;
-        c_leak_path * f64::from(sign(delta_p_path)) * delta_p_path.abs().powf(N_LEAK)
+        self.c_leak_path * f64::from(sign(delta_p_path)) * delta_p_path.abs().powf(N_LEAK)
     }
 
     fn calculate_flow_from_internal_p(
@@ -2952,14 +2950,14 @@ impl InfiltrationVentilation {
             })
             .unzip();
         // Work out the average pitch, weighted by area.
-        let area_total = areas.iter().sum::<f64>();
+        let area_total = areas.iter().copied().sum_with_accumulator::<Sum2<_>>();
         let average_pitch = if !pitches.is_empty() {
             areas
                 .iter()
                 .map(|x| x / area_total)
                 .zip(pitches.iter())
                 .map(|(x, &y)| x * y)
-                .sum::<f64>()
+                .sum_with_accumulator::<Sum2<_>>()
         } else {
             0.
         };
@@ -2995,8 +2993,14 @@ impl InfiltrationVentilation {
                 (facades, roofs)
             });
 
-        let surface_area_facades = surface_area_facades_list.iter().sum::<f64>();
-        let surface_area_roof = surface_area_roof_list.iter().sum::<f64>();
+        let surface_area_facades = surface_area_facades_list
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
+        let surface_area_roof = surface_area_roof_list
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
 
         let total_volume = zones.values().map(|z| z.volume).sum::<f64>();
 

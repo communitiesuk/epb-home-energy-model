@@ -1283,7 +1283,7 @@ impl Zone {
         } else if temp_free < temp_setpnt_heat
             && !relative_eq!(
                 temp_free,
-                temp_setpnt_cool,
+                temp_setpnt_heat,
                 epsilon = 1e-10,
                 max_relative = 1e-9
             )
@@ -1477,7 +1477,7 @@ fn isclose(a: &[f64], b: &[f64], rtol: Option<f64>, atol: Option<f64>) -> bool {
     let atol = atol.unwrap_or(1e-8);
     a.iter()
         .zip(b)
-        .all(|(a, b)| relative_eq!(a, b, max_relative = rtol, epsilon = atol))
+        .all(|(a, b)| (a - b).abs() <= atol + rtol * b.abs())
 }
 
 #[derive(Debug, Error)]

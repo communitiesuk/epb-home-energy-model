@@ -31,6 +31,24 @@ pub fn percentile(mut numbers: Vec<f64>, percentile: usize) -> f64 {
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
 pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
+    // if we only have 2 elements in the x and y arrays
+    // we can avoid calling the interp library
+    if x.len() == 2 && y.len() == 2 {
+        let (x0, x1) = (x[0], x[1]);
+        let (y0, y1) = (y[0], y[1]);
+
+        // clamp out-of-bounds values
+        if input <= x0 {
+            return y0;
+        }
+        if input >= x1 {
+            return y1;
+        }
+
+        // linear interpolation formula
+        return y0 + (input - x0) * (y1 - y0) / (x1 - x0);
+    }
+
     if x.is_empty() {
         panic!("x cannot be empty");
     }
@@ -42,26 +60,8 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     if x.len() != y.len() {
         panic!("x and y must be of equal length");
     }
-
+    
     interp(x, y, input, &InterpMode::FirstLast)
-}
-
-/// This function matches the behaviour Numpy interp
-/// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
-pub fn np_interp_with_extrapolate(input: f64, x: &[f64], y: &[f64]) -> f64 {
-    if x.is_empty() {
-        panic!("x cannot be empty");
-    }
-
-    if y.is_empty() {
-        panic!("y cannot be empty");
-    }
-
-    if x.len() != y.len() {
-        panic!("x and y must be of equal length");
-    }
-
-    interp(x, y, input, &InterpMode::Extrapolate)
 }
 
 pub fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
