@@ -183,7 +183,24 @@ impl ElectricBattery {
         self.grid_charging_possible
     }
 
+    /// Whether the battery can currently store or deliver any energy.
+    ///
+    /// A battery whose age has driven state of health to zero (e.g. a very old
+    /// battery_age) has no usable capacity: it cannot charge, discharge, import
+    /// from or export to grid. Callers should skip battery interactions entirely
+    /// via this check rather than dividing by a zero efficiency or zero capacity.
+    pub(crate) fn has_usable_capacity(&self) -> bool {
+        !relative_eq!(self.state_of_health, 0.0, epsilon = 1e-10)
+    }
+
+    /// A fully degraded battery has zero max capacity, making state of charge
+    /// mathematically undefined (0/0). Physically it holds no charge, so report
+    /// 0 rather than dividing by zero.
     pub(crate) fn get_state_of_charge(&self) -> f64 {
+        if !self.has_usable_capacity() {
+            return 0.0;
+        }
+
         self.current_energy_stored.load(Ordering::SeqCst) / self.max_capacity
     }
 

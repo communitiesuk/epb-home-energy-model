@@ -1507,6 +1507,13 @@ impl SmartApplianceControl {
                 .get_batteries()
                 .expect("Expected batteries for energy supply")
             {
+                // A battery with no usable capacity (e.g. fully degraded by age) can
+                // supply none of this demand, and dividing its predicted charge by a
+                // zero max_capacity below would crash.
+                if !battery.has_usable_capacity() {
+                    continue;
+                }
+
                 // if we expect there will be charge in the battery when this demand occurs, assume
                 // the battery supplies as much of it as possible
                 let idx_24hr = t_idx % self.buffer_length;
@@ -3119,8 +3126,9 @@ mod tests {
             assert_eq!(smart_appliance_control.get_demand(5, "mains elec"), -9950.2);
         }
 
-        #[rstest]
+        // test_add_appliance_demand_no_usable_capacity disproportionately difficult to test as uses mocks
 
+        #[rstest]
         fn test_update_demand_buffer(
             energy_supply: Arc<RwLock<EnergySupply>>,
             simulation_time_iterator: SimulationTimeIterator,
