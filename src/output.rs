@@ -540,6 +540,36 @@ mod tests {
             );
         }
 
+        let space_heat_demand_unmet_incremental_data = [(100.0, 90.0, 0.9)];
+
+        for (total_floor_area, space_heat_demand_unmet_incremental_total, expected) in
+            space_heat_demand_unmet_incremental_data
+        {
+            base_summary.total_floor_area = total_floor_area;
+            base_summary.space_heat_demand_unmet_incremental_total =
+                space_heat_demand_unmet_incremental_total;
+            assert_relative_eq!(
+                base_summary.space_heat_demand_unmet_incremental_total_by_floor_area(),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
+        let space_cool_demand_unmet_incremental_data = [(50.0, 15.0, 0.3)];
+
+        for (total_floor_area, space_cool_demand_unmet_incremental_total, expected) in
+            space_cool_demand_unmet_incremental_data
+        {
+            base_summary.total_floor_area = total_floor_area;
+            base_summary.space_cool_demand_unmet_incremental_total =
+                space_cool_demand_unmet_incremental_total;
+            assert_relative_eq!(
+                base_summary.space_cool_demand_unmet_incremental_total_by_floor_area(),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
         #[allow(clippy::type_complexity)]
         let delivered_energy_data: [(
             f64,

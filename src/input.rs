@@ -7206,7 +7206,7 @@ mod tests {
                 ],
             })
         } else {
-            json!({
+            let mut json = json!({
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": vent_type,
@@ -7217,7 +7217,16 @@ mod tests {
                 "orientation360": 180,
                 "pitch": 90,
                 "mid_height_air_flow_path": 2,
-            })
+            });
+
+            if vent_type == MechVentType::IntermittentMev {
+                json["leakage_when_stopped"] = json!({
+                    "back_draught_protection": "internal damper",
+                    "diameter": "100 mm"
+                });
+            }
+
+            json
         }
     }
 
@@ -7833,7 +7842,7 @@ mod tests {
             ),
             case::efficiency_part_load_greater_than_zero(json!({"efficiency_part_load": 0})
             ),
-            case::efficiency_part_load_at_most_one_point_one_two(json!({"efficiency_part_load": 2})
+            case::efficiency_part_load_at_most_one_point_zero_three(json!({"efficiency_part_load": 1.05})
             ),
             case::modulation_load_at_least_zero(json!({"modulation_load": -1})),
             case::modulation_load_at_most_one(json!({"modulation_load": 2})),
@@ -7849,6 +7858,26 @@ mod tests {
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<HeatPumpBoiler>(valid_example, inputs);
+        }
+
+        #[rstest]
+        /// Part-load efficiency of exactly 1.0 (100% gross) is accepted at the upper bound.
+        fn test_efficiency_part_load_accepts_upper_bound(mut valid_example: JsonValue) {
+            valid_example["efficiency_part_load"] = json!(1.0);
+
+            let boiler: HeatPumpBoiler = serde_json::from_value(valid_example).unwrap();
+
+            assert_eq!(boiler.efficiency_part_load, 1.0);
+        }
+
+        #[rstest]
+        /// Part-load efficiency up to 1.03 is accepted, covering rounding in converted figures.
+        fn test_efficiency_part_load_accepts_rounding_tolerance(mut valid_example: JsonValue) {
+            valid_example["efficiency_part_load"] = json!(1.03);
+
+            let boiler: HeatPumpBoiler = serde_json::from_value(valid_example).unwrap();
+
+            assert_eq!(boiler.efficiency_part_load, 1.03);
         }
     }
 
@@ -9595,6 +9624,91 @@ mod tests {
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<MechanicalVentilation>(valid_example, inputs);
+        }
+
+        #[rstest]
+        /// Test that leakage while stopped can be given for an intermittent extract fan
+        fn test_leakage_when_stopped_accepted_for_intermittent_fan(mut valid_example: JsonValue) {
+            valid_example["vent_type"] = json!(MechVentType::IntermittentMev);
+            valid_example["position_intake"] = json!(null);
+            valid_example["position_exhaust"] = json!({
+                "orientation360": 0,
+                "pitch": 90,
+                "mid_height_air_flow_path": 2.0,
+            });
+            valid_example["leakage_when_stopped"] = json!({
+                "back_draught_protection": json!(BackDraughtProtection::InternalDamper),
+                "diameter": json!(ExtractFanDiameter::Diameter100mm),
+            });
+
+            let mech_vent: MechanicalVentilation = serde_json::from_value(valid_example).unwrap();
+
+            if let MechanicalVentilation {
+                vent_data:
+                    MechVentData::IntermittentMev {
+                        leakage_when_stopped,
+                        ..
+                    },
+                ..
+            } = mech_vent
+            {
+                assert_eq!(
+                    leakage_when_stopped.back_draught_protection,
+                    BackDraughtProtection::InternalDamper
+                );
+                assert_eq!(
+                    leakage_when_stopped.diameter,
+                    ExtractFanDiameter::Diameter100mm
+                );
+            } else {
+                panic!("Expected MechanicalVentilation to have leakage_when_stopped");
+            }
+        }
+
+        #[rstest]
+        /// Test that an intermittent extract fan must state the leakage while stopped
+        fn test_leakage_when_stopped_required_for_intermittent_fan(mut valid_example: JsonValue) {
+            valid_example["vent_type"] = json!(MechVentType::IntermittentMev);
+            valid_example["position_intake"] = json!(null);
+            valid_example["position_exhaust"] = json!({
+                "orientation360": 0,
+                "pitch": 90,
+                "mid_height_air_flow_path": 2.0,
+            });
+            valid_example["leakage_when_stopped"] = json!(null);
+
+            assert!(
+                serde_json::from_value::<MechanicalVentilation>(valid_example.clone()).is_err()
+            );
+        }
+
+        #[rstest]
+        /// Test that leakage while stopped is rejected for a fan that never stops
+        fn test_leakage_when_stopped_rejected_for_continuously_running_fan(
+            mut valid_example: JsonValue,
+        ) {
+            valid_example["leakage_when_stopped"] = json!({
+                "back_draught_protection": json!(BackDraughtProtection::InternalDamper),
+                "diameter": json!(ExtractFanDiameter::Diameter100mm),
+            });
+
+            let mech_vent =
+                serde_json::from_value::<MechanicalVentilation>(valid_example.clone()).unwrap();
+
+            assert!(mech_vent.validate().is_err());
+        }
+
+        #[rstest]
+        /// Test that a fan size with no measured leakage data is rejected
+        ///
+        /// Fans without back-draught protection are only made in the smaller size.
+        fn test_leakage_when_stopped_rejects_unmeasured_combination() {
+            assert!(MechanicalVentilationLeakageWhenStopped {
+                back_draught_protection: BackDraughtProtection::None,
+                diameter: ExtractFanDiameter::Diameter150mm,
+            }
+            .validate()
+            .is_err());
         }
     }
 
@@ -11399,7 +11513,31 @@ mod tests {
             assert_range_constraints::<ZoneInput>(valid_example, inputs);
         }
 
-        // not implementing tests for duplicate elements as this is not expected
+        // not implementing tests for duplicate elements as this is not expected given using set structures
+
+        /// A zone with no system omits the field or gives null; an empty list names no system.
+        #[rstest]
+        #[case("SpaceHeatSystem")]
+        #[case("SpaceCoolSystem")]
+        fn test_validate_system_list_not_empty(mut valid_example: JsonValue, #[case] field: &str) {
+            valid_example[field] = json!([]);
+
+            let zone: ZoneInput = serde_json::from_value(valid_example).unwrap();
+            assert!(zone.validate().is_err());
+        }
+
+        #[rstest]
+        #[case("SpaceHeatSystem")]
+        #[case("SpaceCoolSystem")]
+        fn test_single_item_system_list_accepted(
+            mut valid_example: JsonValue,
+            #[case] field: &str,
+        ) {
+            valid_example[field] = json!(["main"]);
+
+            let zone: ZoneInput = serde_json::from_value(valid_example).unwrap();
+            assert!(zone.validate().is_ok());
+        }
     }
 
     mod window_treatment {
