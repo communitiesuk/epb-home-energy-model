@@ -40,8 +40,10 @@ use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{validator, Validator};
+pub use parking_lot::{Mutex as ParkingLotMutex, RwLock as ParkingLotRwLock};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
+use serde_valid::{validation::Errors, Validate};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -55,11 +57,238 @@ use tracing::{debug, instrument};
 pub const HEM_VERSION: &str = "1.0.0a9";
 pub const HEM_VERSION_DATE: &str = "2026-07-29";
 
+#[instrument(skip_all)]
+pub fn run_project_from_input_file(
+    input: RunInput<'_>,
+    output_writer: &impl OutputWriter,
+    external_conditions_data: Option<ExternalConditionsFromFile>,
+    output_formats: Option<&Vec<OutputFormat>>,
+    tariff_data_file: Option<&str>,
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+) -> Result<CalculationResult, HemError> {
+    #[instrument(skip_all)]
+    fn finalize(input: Value) -> anyhow::Result<Input> {
+        // use compile-time validator first to quickly establish happy case (speed important), fall back to static validator for evaluate in case of errors
+        // (compile-time validator does not yet support evaluate() stably
+        if !CoreSchema::is_valid(&input) {
+            let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
+            if !evaluation.flag().valid {
+                bail!(
+                    "Input JSON was not found to be valid for the core HEM schema: {}",
+                    evaluation
+                        .iter_errors()
+                        .map(|e| format!("{}: {}", e.instance_location, e.error))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                );
+            }
+        }
+
+        serde_json::from_value(input).map_err(|err| anyhow!(err))
+    }
+
+    let input = match input {
+        RunInput::Json(json) => json,
+        RunInput::Read(read) => {
+            serde_json::from_reader(read).map_err(|err| HemError::InvalidRequest(anyhow!(err)))?
+        }
+    };
+    let input = finalize(input)?;
+
+    let results = run_project(
+        input,
+        external_conditions_data,
+        tariff_data_file,
+        heat_balance,
+        detailed_output_heating_cooling,
+    )?;
+
+    if let Some(output_formats) = output_formats {
+        let steps_in_hours = results.input.simulation_time.step;
+        let output_mode = "core";
+        write_core_output_files(
+            &results.output,
+            results.input.as_ref(),
+            output_writer,
+            output_mode,
+            output_formats,
+            steps_in_hours,
+            heat_balance,
+            detailed_output_heating_cooling,
+        )?;
+    }
+
+    Ok(results)
+}
+
+#[instrument(skip_all)]
+pub fn run_project(
+    mut input: Input,
+    external_conditions_data: Option<ExternalConditionsFromFile>,
+    tariff_data_file: Option<&str>,
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+) -> Result<CalculationResult, HemError> {
+    // first, validate the input using serde_valid constraints to confirm these are met
+    input.validate().map_err(|e| {
+        HemError::InvalidRequest(anyhow!(
+            "Input passed core HEM schema but failed additional constraint checks:\n{}",
+            errors_to_human_string(&e)
+        ))
+    })?;
+
+    read_tariff_file(&mut input, tariff_data_file)?;
+
+    catch_unwind(AssertUnwindSafe(|| {
+        #[instrument(skip_all)]
+        fn merge_external_conditions_data(
+            mut input: Input,
+            external_conditions_data: Option<ExternalConditionsInput>,
+        ) -> anyhow::Result<Input> {
+            if external_conditions_data.is_none()
+                && !input.external_conditions.are_all_fields_set() {
+                bail!("No weather data found. Please provide a weather file or complete weather data in the input file.");
+            }
+            if let Some(external_conditions) = external_conditions_data {
+                let shading_segments = &input.external_conditions.shading_segments;
+                let mut new_external_conditions = external_conditions.clone();
+                new_external_conditions.shading_segments = shading_segments.clone();
+                input.external_conditions = Arc::from(new_external_conditions);
+            }
+
+            Ok(input)
+        }
+
+        let input: Arc<Input> = merge_external_conditions_data(input, external_conditions_data
+            .as_ref()
+            .map(ExternalConditionsInput::from))?
+            .into();
+
+        // 1. Determine external conditions to use for calculations.
+        #[instrument(skip_all)]
+        fn resolve_external_conditions(
+            input: &Input,
+        ) -> ExternalConditions {
+            external_conditions_from_input(
+                input.external_conditions.clone(),
+                input.simulation_time,
+            )
+        }
+
+        let corpus = {
+            let external_conditions = resolve_external_conditions(&input);
+
+            // 2. Build corpus from input and external conditions.
+            #[instrument(skip_all)]
+            fn build_corpus(
+                input: Arc<Input>,
+                external_conditions: &ExternalConditions,
+                tariff_data_file: Option<&str>,
+                print_heat_balance: bool,
+                detailed_output_heating_cooling: bool,
+            ) -> anyhow::Result<Corpus> {
+                let output_options = OutputOptions { print_heat_balance, detailed_output_heating_cooling };
+                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options).map_err(|e| anyhow!(e))
+            }
+
+            build_corpus(input.clone(), &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
+                capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
+            })?
+        };
+
+        // 3. Run HEM calculation.
+        #[instrument(skip_all)]
+        fn run_hem_calculation(
+            corpus: &Corpus,
+        ) -> anyhow::Result<Output> {
+            corpus.run()
+        }
+
+        // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
+        let output = match catch_unwind(AssertUnwindSafe(|| {
+            run_hem_calculation(&corpus).map_err(|e| {
+                capture_specific_error_case(&e)
+                    .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
+            })
+        })) {
+            Ok(results) => results?,
+            Err(panic) => {
+                return Err(HemError::PanicInCalculation(
+                    panic
+                        .downcast_ref::<&str>()
+                        .map_or("Error not captured", |v| v)
+                        .to_owned(),
+                ))
+            }
+        };
+
+        Ok(CalculationResult::new(input, output))
+    }))
+        .map_err(|e| {
+            HemError::GeneralPanic(
+                e.downcast_ref::<&str>()
+                    .map_or("Uncaught panic - could not capture more information; to debug further, try replicating in debug mode.", |v| v)
+                    .to_owned(),
+            )
+        })?
+}
+
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum OutputFormat {
     Json,
     Csv,
+}
+
+#[derive(Serialize)]
+pub struct HemResponse {
+    #[serde(flatten)]
+    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
+}
+
+impl HemResponse {
+    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
+        Self {
+            payload: Box::new(payload),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.payload.serialize(serializer)
+    }
+}
+
+pub enum RunInput<'a> {
+    Json(Value),
+    Read(Box<dyn Read + 'a>),
+}
+
+impl<'a, T: Read + 'a> From<T> for RunInput<'a> {
+    fn from(value: T) -> Self {
+        RunInput::Read(Box::new(value))
+    }
+}
+
+fn read_tariff_file(input: &mut Input, tariff_data_file: Option<&str>) -> anyhow::Result<()> {
+    let tariff_data_file = if let Some(tariff_data_file) = tariff_data_file {
+        tariff_data_file
+    } else {
+        return Ok(());
+    };
+
+    let prices = TariffData::load_data_from_file(File::open(tariff_data_file)?)?;
+    if let Some(tariff_data) = input.tariff_data.as_mut() {
+        tariff_data.prices = TariffData::merge_prices_from_files(prices, &tariff_data.prices);
+    } else {
+        input.tariff_data.replace(serde_json::from_value(json!({
+            "start_day": null,
+            "time_series_step": input.simulation_time.step,
+            "prices": prices,
+        }))?);
+    }
+
+    Ok(())
 }
 
 struct StackString {
@@ -167,225 +396,6 @@ fn write_formatted_row(
         });
 
     writer.write_record(record)?;
-
-    Ok(())
-}
-
-#[derive(Serialize)]
-pub struct HemResponse {
-    #[serde(flatten)]
-    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
-}
-
-impl HemResponse {
-    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
-        Self {
-            payload: Box::new(payload),
-        }
-    }
-
-    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.payload.serialize(serializer)
-    }
-}
-
-pub enum RunInput<'a> {
-    Json(Value),
-    Read(Box<dyn Read + 'a>),
-}
-
-impl<'a, T: Read + 'a> From<T> for RunInput<'a> {
-    fn from(value: T) -> Self {
-        RunInput::Read(Box::new(value))
-    }
-}
-
-#[instrument(skip_all)]
-pub fn run_project_from_input_file(
-    input: RunInput<'_>,
-    output_writer: &impl OutputWriter,
-    external_conditions_data: Option<ExternalConditionsFromFile>,
-    output_formats: Option<&Vec<OutputFormat>>,
-    tariff_data_file: Option<&str>,
-    heat_balance: bool,
-    detailed_output_heating_cooling: bool,
-) -> Result<CalculationResult, HemError> {
-    #[instrument(skip_all)]
-    fn finalize(input: Value) -> anyhow::Result<Input> {
-        // use compile-time validator first to quickly establish happy case (speed important), fall back to static validator for evaluate in case of errors
-        // (compile-time validator does not yet support evaluate() stably
-        if !CoreSchema::is_valid(&input) {
-            let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
-            if !evaluation.flag().valid {
-                bail!(
-                    "Wrapper formed invalid JSON for the core schema: {}",
-                    evaluation
-                        .iter_errors()
-                        .map(|e| format!("{}: {}", e.instance_location, e.error))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                );
-            }
-        }
-
-        serde_json::from_value(input).map_err(|err| anyhow!(err))
-    }
-
-    let input = match input {
-        RunInput::Json(json) => json,
-        RunInput::Read(read) => {
-            serde_json::from_reader(read).map_err(|err| HemError::InvalidRequest(anyhow!(err)))?
-        }
-    };
-    let input = finalize(input)?;
-
-    let results = run_project(
-        input,
-        external_conditions_data,
-        tariff_data_file,
-        heat_balance,
-        detailed_output_heating_cooling,
-    )?;
-
-    if let Some(output_formats) = output_formats {
-        let steps_in_hours = results.input.simulation_time.step;
-        let output_mode = "core";
-        write_core_output_files(
-            &results.output,
-            results.input.as_ref(),
-            output_writer,
-            output_mode,
-            output_formats,
-            steps_in_hours,
-            heat_balance,
-            detailed_output_heating_cooling,
-        )?;
-    }
-
-    Ok(results)
-}
-
-#[instrument(skip_all)]
-pub fn run_project(
-    mut input: Input,
-    external_conditions_data: Option<ExternalConditionsFromFile>,
-    tariff_data_file: Option<&str>,
-    heat_balance: bool,
-    detailed_output_heating_cooling: bool,
-) -> Result<CalculationResult, HemError> {
-    read_tariff_file(&mut input, tariff_data_file)?;
-
-    catch_unwind(AssertUnwindSafe(|| {
-        #[instrument(skip_all)]
-        fn merge_external_conditions_data(
-            mut input: Input,
-            external_conditions_data: Option<ExternalConditionsInput>,
-        ) -> anyhow::Result<Input> {
-            if external_conditions_data.is_none()
-                && !input.external_conditions.are_all_fields_set() {
-                bail!("No weather data found. Please provide a weather file or complete weather data in the input file.");
-            }
-            if let Some(external_conditions) = external_conditions_data {
-                let shading_segments = &input.external_conditions.shading_segments;
-                let mut new_external_conditions = external_conditions.clone();
-                new_external_conditions.shading_segments = shading_segments.clone();
-                input.external_conditions = Arc::from(new_external_conditions);
-            }
-
-            Ok(input)
-        }
-
-        let input: Arc<Input> = merge_external_conditions_data(input, external_conditions_data
-            .as_ref()
-            .map(ExternalConditionsInput::from))?
-            .into();
-
-        // 1. Determine external conditions to use for calculations.
-        #[instrument(skip_all)]
-        fn resolve_external_conditions(
-            input: &Input,
-        ) -> ExternalConditions {
-            external_conditions_from_input(
-                input.external_conditions.clone(),
-                input.simulation_time,
-            )
-        }
-
-        let corpus = {
-            let external_conditions = resolve_external_conditions(&input);
-
-            // 2. Build corpus from input and external conditions.
-            #[instrument(skip_all)]
-            fn build_corpus(
-                input: Arc<Input>,
-                external_conditions: &ExternalConditions,
-                tariff_data_file: Option<&str>,
-                print_heat_balance: bool,
-                detailed_output_heating_cooling: bool,
-            ) -> anyhow::Result<Corpus> {
-                let output_options = OutputOptions { print_heat_balance, detailed_output_heating_cooling };
-                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options).map_err(|e| anyhow!(e))
-            }
-
-            build_corpus(input.clone(), &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
-                capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
-            })?
-        };
-
-        // 3. Run HEM calculation.
-        #[instrument(skip_all)]
-        fn run_hem_calculation(
-            corpus: &Corpus,
-        ) -> anyhow::Result<Output> {
-            corpus.run()
-        }
-
-        // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
-        let output = match catch_unwind(AssertUnwindSafe(|| {
-            run_hem_calculation(&corpus).map_err(|e| {
-                capture_specific_error_case(&e)
-                    .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
-            })
-        })) {
-            Ok(results) => results?,
-            Err(panic) => {
-                return Err(HemError::PanicInCalculation(
-                    panic
-                        .downcast_ref::<&str>()
-                        .map_or("Error not captured", |v| v)
-                        .to_owned(),
-                ))
-            }
-        };
-
-        Ok(CalculationResult::new(input, output))
-    }))
-        .map_err(|e| {
-            HemError::GeneralPanic(
-                e.downcast_ref::<&str>()
-                    .map_or("Uncaught panic - could not capture more information; to debug further, try replicating in debug mode.", |v| v)
-                    .to_owned(),
-            )
-        })?
-}
-
-fn read_tariff_file(input: &mut Input, tariff_data_file: Option<&str>) -> anyhow::Result<()> {
-    let tariff_data_file = if let Some(tariff_data_file) = tariff_data_file {
-        tariff_data_file
-    } else {
-        return Ok(());
-    };
-
-    let prices = TariffData::load_data_from_file(File::open(tariff_data_file)?)?;
-    if let Some(tariff_data) = input.tariff_data.as_mut() {
-        tariff_data.prices = TariffData::merge_prices_from_files(prices, &tariff_data.prices);
-    } else {
-        input.tariff_data.replace(serde_json::from_value(json!({
-            "start_day": null,
-            "time_series_step": input.simulation_time.step,
-            "prices": prices,
-        }))?);
-    }
 
     Ok(())
 }
@@ -1737,6 +1747,47 @@ pub fn load_weather_data(
         WeatherFileType::Epw => epw_weather_data_to_external_conditions(input),
         WeatherFileType::Cibse => cibse_weather_data_to_external_conditions(input),
     }
+}
+
+fn format_serde_valid_errors(errors: &Errors, prefix: &str, out: &mut Vec<String>) {
+    match errors {
+        Errors::Object(obj_errors) => {
+            for err in &obj_errors.errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+            for (field, sub_errors) in &obj_errors.properties {
+                let next_prefix = if prefix.is_empty() {
+                    field.clone()
+                } else {
+                    format!("{prefix}.{field}").into()
+                };
+                format_serde_valid_errors(sub_errors, &next_prefix, out);
+            }
+        }
+        Errors::Array(arr_errors) => {
+            for err in &arr_errors.errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+            for (index, sub_errors) in &arr_errors.items {
+                let next_prefix = format!("{prefix}[{index}]");
+                format_serde_valid_errors(sub_errors, &next_prefix, out);
+            }
+        }
+        Errors::NewType(newtype_errors) => {
+            for err in newtype_errors {
+                let label = if prefix.is_empty() { "error" } else { prefix };
+                out.push(format!("{label}: {err}"));
+            }
+        }
+    }
+}
+
+fn errors_to_human_string(errors: &Errors) -> String {
+    let mut lines = Vec::new();
+    format_serde_valid_errors(errors, "", &mut lines);
+    lines.join("\n")
 }
 
 #[validator(path = "./schemas/core-input.schema.json")]

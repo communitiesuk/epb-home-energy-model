@@ -86,16 +86,16 @@ use crate::core::water_heat_demand::dhw_demand::{OutletType, ELECTRIC_SHOWERS_HW
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
-    ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
-    Control as ControlInput, ControlCombinations, ControlDetails, ControlLogicType,
-    ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FloorData, FlowData,
-    FuelType, HeatBattery as HeatBatteryInput, HeatBatteryPcmChargingSource, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
-    NumericScheduleOrControlReference, OnSiteGeneration as OnSiteGenerationInput,
-    PartyWallCavityType, PcmBatteryChargingConfiguration, PhotovoltaicInputs,
+    BuildingElement as BuildingElementInput, ChargeLevel, ChargeTargetScheduleOrControlReference,
+    ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
+    ControlDetails, ControlLogicType, ControlReferences, EnergyDiverter, EnergySupplyDetails,
+    EnergySupplyInput, FloorData, FlowData, FuelType, HeatBattery as HeatBatteryInput,
+    HeatBatteryPcmChargingSource, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
+    InternalGains as InternalGainsInput, InternalGainsDetails, NumericScheduleOrControlReference,
+    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
+    PcmBatteryChargingConfiguration, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SingleOrMap, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
@@ -121,13 +121,13 @@ use crate::output::{OutputEmitters, OutputMetadata};
 use crate::statistics::percentile;
 use crate::StringOrNumber;
 use crate::{convert_profile_to_daily, HEM_VERSION};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
 use erased_serde::__private::serde::Serializer;
-use fsum::FSum;
 use indexmap::{indexmap, IndexMap, IndexSet};
 #[cfg(feature = "indicatif")]
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
@@ -793,15 +793,15 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         let r_se = 1. / (H_CE + H_RE);
 
         Ok(match data {
-            BuildingElementInput::Opaque { area_input, .. } => {
+            BuildingElementInput::Opaque { area, .. } => {
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
-                area_input.area() * u_value
+                *area * u_value
             }
-            BuildingElementInput::Transparent { area_input, .. } => {
+            BuildingElementInput::Transparent { height, width, .. } => {
                 let r_curtains_blinds = 0.04;
                 let u_value =
                     1.0 / (thermal_resistance_construction + r_se + r_si + r_curtains_blinds);
-                let area = area_input.area();
+                let area = height * width;
                 area * u_value
             }
             BuildingElementInput::Ground { area, u_value, .. } => *area * *u_value,
@@ -890,13 +890,12 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         let total_vent_heat_loss = calc_vent_heat_transfer_coeff(zone.volume, air_changes_per_hour);
 
         // Calculate fabric heat loss and total floor area
-        let total_fabric_heat_loss = FSum::with_all(
-            zone.building_elements
-                .iter()
-                .map(|(element_name, element)| calc_heat_loss(element, element_name))
-                .try_collect::<f64, Vec<f64>, anyhow::Error>()?,
-        )
-        .value();
+        let total_fabric_heat_loss = zone
+            .building_elements
+            .iter()
+            .map(|(element_name, element)| calc_heat_loss(element, element_name))
+            .try_collect::<f64, Vec<f64>, anyhow::Error>()?
+            .sum_with_accumulator::<Sum2<_>>();
 
         // Read in thermal bridging data
         let tb_heat_trans_coeff = calc_heat_transfer_coeff(&zone.thermal_bridging);
@@ -926,8 +925,11 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
         zone_area.insert(z_name.into(), zone.area);
     }
 
-    let total_htc = FSum::with_all(htc_map.values()).value();
-    let total_floor_area = FSum::with_all(zone_area.values()).value();
+    let total_htc = htc_map.values().copied().sum_with_accumulator::<Sum2<_>>();
+    let total_floor_area = zone_area
+        .values()
+        .copied()
+        .sum_with_accumulator::<Sum2<_>>();
     let total_hlp = total_htc / total_floor_area;
 
     Ok(HtcHlpCalculation {
@@ -1079,7 +1081,11 @@ impl Corpus {
             event_schedules_start_day,
         )?;
 
-        let total_volume = FSum::with_all(input.zone.values().map(|zone| zone.volume)).value();
+        let total_volume = input
+            .zone
+            .values()
+            .map(|zone| zone.volume)
+            .sum_with_accumulator::<Sum2<_>>();
 
         let mut heat_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
         let mut cool_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
@@ -1171,7 +1177,10 @@ impl Corpus {
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
             &zone_processing_order,
         );
-        let total_floor_area = FSum::with_all(zones.values().map(|zone| zone.area())).value();
+        let total_floor_area = zones
+            .values()
+            .map(|zone| zone.area())
+            .sum_with_accumulator::<Sum2<_>>();
 
         // Internal gains is an ordered IndexMap. This is because load shifting behaviours
         // of appliance gains depend on other energy demand in the dwelling at any given time,
@@ -1899,10 +1908,16 @@ impl Corpus {
         hc_output_convective: &IndexMap<ArcStr, f64>,
         hc_output_radiative: &IndexMap<ArcStr, f64>,
     ) -> (f64, f64) {
-        let gains_heat_cool_convective = FSum::with_all(hc_output_convective.values()).value()
+        let gains_heat_cool_convective = hc_output_convective
+            .values()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>()
             * WATTS_PER_KILOWATT as f64
             / delta_t_h;
-        let gains_heat_cool_radiative = FSum::with_all(hc_output_radiative.values()).value()
+        let gains_heat_cool_radiative = hc_output_radiative
+            .values()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>()
             * WATTS_PER_KILOWATT as f64
             / delta_t_h;
 
@@ -2569,8 +2584,14 @@ impl Corpus {
             )?;
 
             // Sum heating gains (+ve) and cooling gains (-ve) and convert from kWh to W
-            let hc_output_convective_total = FSum::with_all(hc_output_convective.values()).value();
-            let hc_output_radiative_total = FSum::with_all(hc_output_radiative.values()).value();
+            let hc_output_convective_total = hc_output_convective
+                .values()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let hc_output_radiative_total = hc_output_radiative
+                .values()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
 
             let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
                 * WATTS_PER_KILOWATT as f64
@@ -2943,8 +2964,9 @@ impl Corpus {
                 self.external_conditions.air_temp(t_it),
             )?;
 
-            let mut gains_internal_dhw_on_site_generation =
-                FSum::with_all(gains_internal_dhw.values()).value();
+            let mut gains_internal_dhw_on_site_generation = gains_internal_dhw
+                .into_values()
+                .sum_with_accumulator::<Sum2<_>>();
 
             let mut gains_internal_hb = 0.;
             // Adding heat battery losses to internal gains
@@ -3404,9 +3426,12 @@ impl Corpus {
                 fuel_summary
                     .iter()
                     .filter_map(|(conn_name, energy_cons)| {
-                        energy_supply_conn_names
-                            .contains(conn_name)
-                            .then_some(FSum::with_all(energy_cons).value())
+                        energy_supply_conn_names.contains(conn_name).then_some(
+                            energy_cons
+                                .iter()
+                                .copied()
+                                .sum_with_accumulator::<Sum2<_>>(),
+                        )
                     })
                     .sum::<f64>()
             })
@@ -3422,18 +3447,20 @@ impl Corpus {
         let delivered_by_service =
             self.heat_sources_wet[battery_name].battery_energy_delivered_by_service();
 
-        FSum::with_all(energy_supply_conn_names.iter().map(|conn_name| {
-            delivered_by_service
-                .as_ref()
-                .map(|delivered_by_service| {
-                    delivered_by_service
-                        .get(conn_name)
-                        .copied()
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default()
-        }))
-        .value()
+        energy_supply_conn_names
+            .iter()
+            .map(|conn_name| {
+                delivered_by_service
+                    .as_ref()
+                    .map(|delivered_by_service| {
+                        delivered_by_service
+                            .get(conn_name)
+                            .copied()
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default()
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     /// Apportion each heat battery's charging energy across the services it supplies.
@@ -3498,8 +3525,10 @@ impl Corpus {
                 results_end_user,
                 &self.charging_connection_names_for_heat_battery[&battery_name],
             );
-            let delivered_total =
-                FSum::with_all(services.iter().map(|(delivered, _, _)| delivered)).value();
+            let delivered_total = services
+                .iter()
+                .map(|(delivered, _, _)| *delivered)
+                .sum_with_accumulator::<Sum2<_>>();
             let service_count = services.len();
             for (delivered, accumulator, service_name) in services {
                 let share = if relative_eq!(delivered_total, 0.0, epsilon = 1e-10) {
@@ -3549,7 +3578,14 @@ impl Corpus {
                 Some(hc_name) if !hc_name.is_empty() => hc_name,
                 _ => continue,
             };
-            hc_output_overall.insert(hc_name.clone(), FSum::with_all(hc_output).value().abs());
+            hc_output_overall.insert(
+                hc_name.clone(),
+                hc_output
+                    .iter()
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>()
+                    .abs(),
+            );
             hc_input_overall.insert(
                 hc_name.clone(),
                 Self::energy_consumed_for_conn_names(
@@ -3606,7 +3642,10 @@ impl Corpus {
             let mut total_generated = 0.;
             let mut total_consumed = 0.;
             for result_value in result.values() {
-                let sum_arr = FSum::with_all(result_value).value();
+                let sum_arr = result_value
+                    .iter()
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>();
                 if sum_arr < 0. {
                     total_generated += sum_arr.abs();
                 } else {
@@ -3614,24 +3653,51 @@ impl Corpus {
                 }
             }
 
-            let grid_to_consumption = FSum::with_all(&output_core.grid_to_consumption[key]).value();
-            let generation_to_grid = FSum::with_all(&output_core.generation_to_grid[key])
-                .value()
+            let grid_to_consumption = output_core.grid_to_consumption[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let generation_to_grid = output_core.generation_to_grid[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>()
                 .abs();
-            let storage_to_grid = FSum::with_all(&output_core.storage_to_grid[key])
-                .value()
+            let storage_to_grid = output_core.storage_to_grid[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>()
                 .abs();
-            let gen_to_storage = FSum::with_all(&output_core.energy_to_storage[key]).value();
-            let storage_to_consumption = FSum::with_all(&output_core.energy_from_storage[key])
-                .value()
+            let gen_to_storage = output_core.energy_to_storage[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let storage_to_consumption = output_core.energy_from_storage[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>()
                 .abs();
-            let gen_to_diverter = FSum::with_all(&output_core.energy_diverted[key]).value();
-            let gen_curtailed = FSum::with_all(&output_core.generation_curtailed[key]).value();
-            let total_gross_import = FSum::with_all(&output_core.energy_import[key]).value();
-            let total_gross_export = FSum::with_all(&output_core.energy_export[key]).value();
+            let gen_to_diverter = output_core.energy_diverted[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let gen_curtailed = output_core.generation_curtailed[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let total_gross_import = output_core.energy_import[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
+            let total_gross_export = output_core.energy_export[key]
+                .iter()
+                .copied()
+                .sum_with_accumulator::<Sum2<_>>();
 
-            let total_energy_into_battery =
-                gen_to_storage + FSum::with_all(&output_core.storage_from_grid[key]).value();
+            let total_energy_into_battery = gen_to_storage
+                + output_core.storage_from_grid[key]
+                    .iter()
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>();
             let storage_eff = if total_energy_into_battery > 0. {
                 (storage_to_consumption + storage_to_grid) / total_energy_into_battery
             } else {
@@ -3652,8 +3718,10 @@ impl Corpus {
                     net_import: total_gross_import + total_gross_export,
                     generation_to_storage: gen_to_storage,
                     storage_to_consumption,
-                    grid_to_storage: FSum::with_all(&output_core.storage_from_grid[key])
-                        .value()
+                    grid_to_storage: output_core.storage_from_grid[key]
+                        .iter()
+                        .copied()
+                        .sum_with_accumulator::<Sum2<_>>()
                         .abs(),
                     generation_to_diverter: gen_to_diverter,
                     generation_curtailed: gen_curtailed,
@@ -3677,7 +3745,10 @@ impl Corpus {
                 delivered_energy_dict.insert(fuel.clone(), IndexMap::from([("total".into(), 0.)]));
 
                 for (end_use, delivered_energy) in end_uses {
-                    let sum_delivered_energy = FSum::with_all(delivered_energy).value();
+                    let sum_delivered_energy = delivered_energy
+                        .iter()
+                        .copied()
+                        .sum_with_accumulator::<Sum2<_>>();
                     if sum_delivered_energy > 0.
                         || relative_eq!(
                             sum_delivered_energy,
@@ -3712,11 +3783,21 @@ impl Corpus {
                 .insert(hws_name.clone(), percentile(daily_hw_demand, 75));
         }
 
-        let space_heat_demand_total =
-            FSum::with_all(output_core.zone_data.space_heat_demand.values().flatten()).value();
+        let space_heat_demand_total = output_core
+            .zone_data
+            .space_heat_demand
+            .values()
+            .flatten()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
 
-        let space_cool_demand_total =
-            FSum::with_all(output_core.zone_data.space_cool_demand.values().flatten()).value();
+        let space_cool_demand_total = output_core
+            .zone_data
+            .space_cool_demand
+            .values()
+            .flatten()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>();
 
         OutputSummary {
             total_floor_area: self.total_floor_area,
@@ -3769,10 +3850,12 @@ impl Corpus {
         // Add because export figures already negative.
         let net_import_per_timestep = (0..output_core.timestep_array.len())
             .map(|i| {
-                FSum::with_all(electricity_keys.iter().map(|key| {
-                    output_core.energy_import[key][i] + output_core.energy_export[key][i]
-                }))
-                .value()
+                electricity_keys
+                    .iter()
+                    .map(|key| {
+                        output_core.energy_import[key][i] + output_core.energy_export[key][i]
+                    })
+                    .sum_with_accumulator::<Sum2<_>>()
             })
             .collect_vec();
 
@@ -4021,7 +4104,7 @@ fn energy_supply_from_input(
             let tariff_data = match tariff_data {
                 Some(tariff_data) => Arc::unwrap_or_clone(tariff_data),
                 None => {
-                    let tariff_path = tariff_file_path.ok_or_else(|| anyhow!("A battery that can be charged from the grid is present but no tariff data source was provided"))?;
+                    let tariff_path = tariff_file_path.ok_or(BuildError::TariffDataNotProvided)?;
                     let tariff_file = Box::new(BufReader::new(
                         File::open(tariff_path)
                             .expect("Provided tariff file at provided path was not found"),
@@ -4123,9 +4206,10 @@ fn internal_gains_from_details(
 fn convert_energy_to_wm2(
     internal_gains_details: &InternalGainsDetails,
     total_floor_area: f64,
-) -> anyhow::Result<Vec<f64>> {
+) -> Result<Vec<f64>, BuildError> {
     let schedule = &internal_gains_details.schedule;
-    Ok(reject_nulls(expand_numeric_schedule(schedule))?
+    Ok(reject_nulls(expand_numeric_schedule(schedule))
+        .map_err(|_| BuildError::ExpectedNoNullValuesInSchedule("internal gains".to_string()))?
         .iter()
         .map(|energy_data| energy_data / total_floor_area)
         .collect())
@@ -4755,7 +4839,9 @@ fn building_element_from_input(
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
-            area_input,
+            height,
+            area,
+            width,
             pitch,
             solar_absorption_coeff,
             u_value_input,
@@ -4766,19 +4852,13 @@ fn building_element_from_input(
             ..
         } => {
             let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
-                is_unheated_pitched_roof
-                    .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
+                is_unheated_pitched_roof.ok_or(BuildError::NotSpecifiedWhetherRoofIsUnheated)?
             } else {
                 false
             };
 
-            let BuildingElementHeightWidthInput { height, width } =
-                area_input.height_and_width.ok_or_else(|| {
-                    anyhow!("Height and width of opaque building element must be provided.")
-                })?;
-
             BuildingElement::Opaque(BuildingElementOpaque::new(
-                area_input.area(),
+                *area,
                 is_unheated_pitched_roof,
                 *pitch,
                 *solar_absorption_coeff,
@@ -4787,13 +4867,14 @@ fn building_element_from_input(
                 *mass_distribution_class,
                 *orientation,
                 *base_height,
-                height,
-                width,
+                *height,
+                *width,
                 external_conditions,
             ))
         }
         BuildingElementInput::Transparent {
-            area_input,
+            height,
+            width,
             u_value_input,
             pitch,
             orientation360: orientation,
@@ -4803,37 +4884,33 @@ fn building_element_from_input(
             shading,
             treatment,
             ..
-        } => {
-            let BuildingElementHeightWidthInput { height, width } = *area_input;
-
-            BuildingElement::Transparent(BuildingElementTransparent::new(
-                *pitch,
-                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
-                Some(*orientation),
-                *g_value,
-                *frame_area_fraction,
-                *base_height,
-                height,
-                width,
-                Some(shading.clone()),
-                treatment
-                    .as_ref()
-                    .map(|treatments| {
-                        treatments
-                            .iter()
-                            .map(|t| {
-                                WindowTreatment::from_input(
-                                    t,
-                                    controls,
-                                    simulation_time_iterator.current_hour(),
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .transpose()?,
-                external_conditions,
-            ))
-        }
+        } => BuildingElement::Transparent(BuildingElementTransparent::new(
+            *pitch,
+            init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch, element_name)?,
+            Some(*orientation),
+            *g_value,
+            *frame_area_fraction,
+            *base_height,
+            *height,
+            *width,
+            Some(shading.clone()),
+            treatment
+                .as_ref()
+                .map(|treatments| {
+                    treatments
+                        .iter()
+                        .map(|t| {
+                            WindowTreatment::from_input(
+                                t,
+                                controls,
+                                simulation_time_iterator.current_hour(),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
+            external_conditions,
+        )),
         BuildingElementInput::Ground {
             area,
             total_area,
@@ -5053,13 +5130,14 @@ fn appliance_gains_from_single_input(
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<ApplianceGains> {
+) -> Result<ApplianceGains, BuildError> {
     let total_energy_supply = reject_nulls(expand_numeric_schedule(
         input
             .schedule
             .as_ref()
-            .ok_or_else(|| anyhow!("Appliance gains did not have schedule when expected."))?,
-    ))?
+            .ok_or(BuildError::InvalidApplianceGainsFieldCombination)?,
+    ))
+    .map_err(|_| BuildError::ExpectedNoNullValuesInSchedule("appliance gains".to_string()))?
     .iter()
     .map(|energy_data| energy_data / total_floor_area)
     .collect();
@@ -5072,6 +5150,10 @@ fn appliance_gains_from_single_input(
         simulation_time_iterator,
         energy_supply_connection,
     )
+    .map_err(|error| BuildError::DomainModelBuildError {
+        domain_model: "appliance gains",
+        error: error.into(),
+    })
 }
 
 #[derive(Debug)]
@@ -5178,7 +5260,7 @@ impl WetHeatSource {
         temp_hot_water: f64,
         cold_feed: WaterSupply,
         keep_hot_control: Option<Arc<OnOffTimeControl>>,
-    ) -> anyhow::Result<BoilerServiceWaterCombi> {
+    ) -> Result<BoilerServiceWaterCombi, BuildError> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().create_service_hot_water_combi(
                 boiler_data,
@@ -5186,29 +5268,31 @@ impl WetHeatSource {
                 temp_hot_water,
                 cold_feed,
                 keep_hot_control,
-            ),
-            WetHeatSource::Boiler(ref mut boiler) => Boiler::create_service_hot_water_combi(
+            ).map_err(|error| BuildError::DomainModelBuildError { domain_model: "hot water combi boiler for heat pump", error: error.into() }),
+            WetHeatSource::Boiler(ref mut boiler) => Ok(Boiler::create_service_hot_water_combi(
                 boiler.clone(),
                 boiler_data,
                 service_name,
                 temp_hot_water,
                 cold_feed,
                 keep_hot_control,
-            )
-            .map_err(|err| anyhow!(format!("{err}"))),
+            ).expect("Hot water source passed in boiler heat source had not been checked for being of combi boiler type - this is a logical error")),
             WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
-                DirectElectricBoiler::create_service_hot_water_combi(
+                Ok(DirectElectricBoiler::create_service_hot_water_combi(
                     boiler.clone(),
                     service_name,
                     boiler_data,
                     temp_hot_water,
                     cold_feed,
                     keep_hot_control,
-                )
-                .map_err(|err| anyhow!(format!("{err}")))
+                ).expect("Hot water source passed in direct electric boiler had not been checked for being of combi boiler type - this is a logical error"))
             }
-            _ => {
-                bail!("Expect to only be able to create a hot water combi service for boilers and heat pumps.")
+            source=> {
+                Err(BuildError::InvalidHeatSourceWetForCombiBoiler(match source {
+                    WetHeatSource::Hiu(_) => "HIU",
+                    WetHeatSource::HeatBattery(_) => "heat battery",
+                    _ => unreachable!(),
+                }))
             }
         }
     }
@@ -5243,7 +5327,6 @@ impl WetHeatSource {
     }
 }
 
-// TODO - this enum is a placeholder, to review later and potentially implement a trait instead
 #[derive(Debug)]
 pub(crate) enum HeatSystem {
     WetSystem(WetHeatSource),
@@ -5510,7 +5593,9 @@ fn heat_source_wet_from_input(
                 source_type,
                 HeatPumpSourceType::HeatNetwork
             ) {
-                let energy_supply_heat_network = energy_supply_heat_network.as_ref().ok_or_else(|| anyhow!("A heat pump with a heat network source is expected to reference an energy supply for the heat network."))?;
+                let energy_supply_heat_network = energy_supply_heat_network
+                    .as_ref()
+                    .ok_or(BuildError::HeatPumpWithHeatNetworkSourceMissingEnergySupply)?;
                 Some(
                     energy_supplies
                         .get(energy_supply_heat_network)
@@ -6109,7 +6194,9 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             &energy_supply_conn_name,
-                            temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
+                            temp_flow_limit_upper.ok_or(
+                                BuildError::HeatPumpHeatSourceMissingTempFlowLimitUpperField,
+                            )?,
                             Some(Arc::new(cold_water_source.clone())),
                             range_time_control,
                         )?),
@@ -6121,29 +6208,32 @@ fn heat_source_from_input(
                             range_time_control,
                         )?),
                     )),
-                    WetHeatSource::DirectElectricBoiler(ref mut boiler) =>
-                        HeatSource::Wet(Box::new(
-                            HeatSourceWet::WaterRegular(DirectElectricBoiler::create_service_hot_water_regular(
+                    WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::WaterRegular(
+                            DirectElectricBoiler::create_service_hot_water_regular(
                                 boiler.clone(),
                                 energy_supply_conn_name.as_str(),
                                 range_time_control,
-                            )?),
-                        )),
-                    WetHeatSource::Hiu(_heat_network) => {
-                        HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
-                            {
-                                HeatNetwork::create_service_hot_water_storage(
-                                    _heat_network,
-                                    &energy_supply_conn_name,
-                                    range_time_control,
-                                )
-                            }
+                            )?,
                         )))
+                    }
+                    WetHeatSource::Hiu(_heat_network) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage({
+                            HeatNetwork::create_service_hot_water_storage(
+                                _heat_network,
+                                &energy_supply_conn_name,
+                                range_time_control,
+                            )
+                        })))
                     }
                     WetHeatSource::HeatBattery(battery) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatBatteryHotWater(match battery {
                             HeatBattery::DryCore(dry_core) => HeatBatteryWaterService::DryCore(
-                                HeatBatteryDryCore::create_service_hot_water_regular(dry_core, &energy_supply_conn_name, range_time_control)?
+                                HeatBatteryDryCore::create_service_hot_water_regular(
+                                    dry_core,
+                                    &energy_supply_conn_name,
+                                    range_time_control,
+                                )?,
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
                                 HeatBatteryPcm::create_service_hot_water_regular(
@@ -6462,8 +6552,9 @@ fn hot_water_source_from_input(
                                                heat_source: &IndexMap<ArcStr, HeatSourceInput>,
                                                volume: &f64,
                                                daily_losses: &f64|
-     -> anyhow::Result<
+     -> Result<
         IndexMap<ArcStr, PositionedHeatSource>,
+        BuildError,
     > {
         let mut heat_sources: IndexMap<ArcStr, PositionedHeatSource> = Default::default();
 
@@ -6478,8 +6569,8 @@ fn hot_water_source_from_input(
         // could be a pre-heated source or wwhr that might be enough
         for (heat_source_name, heat_source_data) in heat_source {
             if used_heat_source_names.contains(heat_source_name) {
-                return Err(anyhow!(
-                    "Duplicate heat source name detected: {heat_source_name}"
+                return Err(BuildError::HeatSourceNamesNotUnique(
+                    heat_source_name.to_string(),
                 ));
             }
             used_heat_source_names.insert(heat_source_name.clone());
@@ -6789,9 +6880,7 @@ fn hot_water_source_from_input(
                 heat_source_wet.create_service_hot_water_combi(
                     cloned_input,
                     energy_supply_conn_name.as_str(),
-                    setpoint_temp.ok_or_else(|| {
-                        anyhow!("A setpoint temp was expected on a combi boiler input.")
-                    })?,
+                    *setpoint_temp,
                     cold_water_source,
                     keep_hot_control,
                 )?,
@@ -6864,11 +6953,7 @@ fn hot_water_source_from_input(
                 HeatNetwork::create_service_hot_water_direct(
                     heat_network.clone(),
                     &energy_supply_conn_name,
-                    (*setpoint_temp).ok_or_else(|| {
-                        anyhow!(
-                        "A setpoint_temp value was expected on a point of use hot water source."
-                    )
-                    })?,
+                    (*setpoint_temp).ok_or(BuildError::HiuMissingSetpointTempField)?,
                     cold_water_source,
                 )
                 .into(),
@@ -7000,11 +7085,11 @@ fn space_heat_systems_from_input(
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
     initial_temp: f64,
-) -> anyhow::Result<SpaceHeatSystemsData> {
+) -> Result<SpaceHeatSystemsData, BuildError> {
     let mut energy_conn_names_for_systems: IndexMap<ArcStr, ArcStr> = Default::default();
     let mut heat_battery_names_for_space_heat_systems: IndexMap<ArcStr, Vec<ArcStr>> =
         Default::default();
-    let zone_heated_by_system = |heat_system_name: &ArcStr| -> anyhow::Result<Arc<Zone>> {
+    let zone_heated_by_system = |heat_system_name: &ArcStr| -> Result<Arc<Zone>, BuildError> {
         for (zone_name, zone) in zones.iter() {
             if heat_system_name_for_zone
                 .get(zone_name)
@@ -7013,9 +7098,9 @@ fn space_heat_systems_from_input(
                 return Ok(zone.clone());
             }
         }
-        Err(anyhow!(
+        Err(BuildError::Unexpected(format!(
             "Zone for heat system not found: {heat_system_name}"
-        ))
+        )))
     };
     let space_heat_systems = input
         .iter()
@@ -7542,14 +7627,16 @@ fn total_volume_heated_by_system(
     heat_system_name_for_zone: &IndexMap<ArcStr, Vec<ArcStr>>,
     heat_system_name: &str,
 ) -> f64 {
-    FSum::with_all(zones.iter().filter_map(|(z_name, zone)| {
-        if let Some(system_names) = heat_system_name_for_zone.get(z_name) {
-            (system_names.iter().any(|name| heat_system_name == name)).then(|| zone.volume())
-        } else {
-            None
-        }
-    }))
-    .value()
+    zones
+        .iter()
+        .filter_map(|(z_name, zone)| {
+            if let Some(system_names) = heat_system_name_for_zone.get(z_name) {
+                (system_names.iter().any(|name| heat_system_name == name)).then(|| zone.volume())
+            } else {
+                None
+            }
+        })
+        .sum_with_accumulator::<Sum2<_>>()
 }
 
 fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<RequiredVentData>> {
@@ -7685,6 +7772,7 @@ impl AndReturn {
 
 /// An error encountered when building the corpus.
 #[derive(Debug, Error)]
+#[cfg_attr(test, visibility::make(pub(crate)))]
 pub enum BuildError {
     #[non_exhaustive]
     #[error(transparent)]
@@ -7722,6 +7810,7 @@ pub enum BuildError {
     #[error("Incompatible control provided: {0}")]
     IncompatibleControl(String),
     #[error("Error when building HEM {domain_model} model: {error}")]
+    #[allow(clippy::enum_variant_names)]
     DomainModelBuildError {
         domain_model: &'static str,
         #[source]
@@ -7746,6 +7835,28 @@ pub enum BuildError {
     BadColdWaterSourceReference(String),
     #[error("A reference to a zone entry '{0}' was found that is not in the zone input section.")]
     BadZoneReference(String),
+    #[error("A battery that can be charged from the grid is present but no tariff data has been made available to this HEM calculation.")]
+    TariffDataNotProvided,
+    #[error(
+        "An opaque building element with a pitch of less than 60° needs to specify whether it is an unheated pitched roof."
+    )]
+    NotSpecifiedWhetherRoofIsUnheated,
+    #[error("An appliance gains input should either have `Events` and `Standby` fields, or a `schedule` field.")]
+    InvalidApplianceGainsFieldCombination,
+    #[error("A combi boiler cannot use {0} a HeatSourceWet")]
+    InvalidHeatSourceWetForCombiBoiler(&'static str),
+    #[error("A heat pump with a heat network source must also specify an energy supply for the heat network using the `EnergySupply_heat_network` field.")]
+    HeatPumpWithHeatNetworkSourceMissingEnergySupply,
+    #[error(
+        "A heat pump with a heat network source must also specify a `temp_flow_limit_upper` field."
+    )]
+    HeatPumpHeatSourceMissingTempFlowLimitUpperField,
+    #[error("Names for heat sources (pre-heated and hot water sources) must be unique within the input: {0} was found in more than one location.")]
+    HeatSourceNamesNotUnique(String),
+    #[error("An HIU needs a `setpoint_temp` field to be provided.")]
+    HiuMissingSetpointTempField,
+    #[error("An error that we did not expect to happen, did. We will investigate. Error: {0}")]
+    Unexpected(String),
 }
 
 impl From<CircularDependencyError> for BuildError {

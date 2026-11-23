@@ -1186,7 +1186,6 @@ pub struct EnergySupplyDetails {
     pub(crate) threshold_prices_export: Option<[f64; 12]>,
 
     /// Grid price below which battery is permitted to charge from grid (monthly values) (unit: p/kWh)
-    #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_prices: Option<[f64; 12]>,
 
     /// Maximum power limit for importing from the grid to charge batteries,
@@ -2400,7 +2399,7 @@ pub enum HotWaterSourceDetails {
         /// Temperature setpoint for the combi boiler hot water output (unit: ˚C)
         #[validate(minimum = 0.)]
         #[validate(maximum = 100.)]
-        setpoint_temp: Option<f64>,
+        setpoint_temp: f64,
 
         /// Daily hot water usage for the combi boiler system (unit: litre/day)
         #[serde(rename = "daily_HW_usage")]
@@ -4139,9 +4138,17 @@ pub enum BuildingElement {
         #[validate(minimum = 0.)]
         base_height: f64,
 
-        #[serde(flatten)]
-        #[validate]
-        area_input: BuildingElementAreaOrHeightWidthInput,
+        /// Area of the building element (m²)
+        #[validate(exclusive_minimum = 0.)]
+        area: f64,
+
+        /// Height of the building element (m)
+        #[validate(exclusive_minimum = 0.)]
+        height: f64,
+
+        /// Width of the building element (m)
+        #[validate(exclusive_minimum = 0.)]
+        width: f64,
     },
 
     #[serde(rename = "BuildingElementTransparent")]
@@ -4174,9 +4181,13 @@ pub enum BuildingElement {
         #[validate(minimum = 0.)]
         base_height: f64,
 
-        #[serde(flatten)]
-        #[validate]
-        area_input: BuildingElementHeightWidthInput,
+        /// Height of the building element (m)
+        #[validate(exclusive_minimum = 0.)]
+        height: f64,
+
+        /// Width of the building element (m)
+        #[validate(exclusive_minimum = 0.)]
+        width: f64,
 
         /// Real openable sections of the window unit, each carrying its own
         /// openable area, free area height and mid-height. A window with no
@@ -4339,66 +4350,6 @@ pub enum UValueInput {
     },
 }
 
-/// Enum to encapsulate when height and width can be provided, or area (or both though they need to match)
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct BuildingElementAreaOrHeightWidthInput {
-    /// Area of the building element (m²)
-    #[validate(exclusive_minimum = 0.)]
-    area: Option<f64>,
-
-    #[serde(flatten)]
-    #[validate]
-    pub(crate) height_and_width: Option<BuildingElementHeightWidthInput>,
-}
-
-impl BuildingElementAreaOrHeightWidthInput {
-    pub fn area(&self) -> f64 {
-        self.area.unwrap_or(self.height_and_width.unwrap_or_else(|| panic!("Building element area/ height and width code has a logic error and could not proceed.")).area())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct BuildingElementHeightWidthInput {
-    /// Height of the building element (m)
-    #[validate(exclusive_minimum = 0.)]
-    pub height: f64,
-
-    /// Width of the building element (m)
-    #[validate(exclusive_minimum = 0.)]
-    pub width: f64,
-}
-
-impl BuildingElementHeightWidthInput {
-    pub fn area(&self) -> f64 {
-        self.height * self.width
-    }
-}
-
-fn validate_area_height_width(
-    data: &BuildingElementAreaOrHeightWidthInput,
-) -> Result<(), serde_valid::validation::Error> {
-    match data {
-        BuildingElementAreaOrHeightWidthInput {
-            area: None,
-            height_and_width: None,
-        } => custom_validation_error("Building element input needed to specify an area value if a height and width pair of values was not provided."),
-        BuildingElementAreaOrHeightWidthInput {
-            area: Some(area),
-            height_and_width: Some(height_and_width),
-        } if !relative_eq!(*area, height_and_width.area(), max_relative = 1e-9) => custom_validation_error(
-            format!(
-                "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
-                height_and_width.height,
-                height_and_width.width,
-                height_and_width.area()
-            )
-        ),
-        _ => Ok(())
-    }
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "party_wall_cavity_type", rename_all = "snake_case")]
@@ -4449,13 +4400,14 @@ fn validate_max_window_open_area_for_transparent(
     element: &BuildingElement,
 ) -> Result<(), serde_valid::validation::Error> {
     let (area, total_open_area) = if let BuildingElement::Transparent {
-        area_input,
+        height,
+        width,
         window_part_list,
         ..
     } = element
     {
         (
-            area_input.area(),
+            height * width,
             window_part_list
                 .iter()
                 .map(|part| part.max_window_open_area)
@@ -4480,7 +4432,7 @@ fn validate_free_area_height_for_transparent(
     element: &BuildingElement,
 ) -> Result<(), serde_valid::validation::Error> {
     if let BuildingElement::Transparent {
-        area_input: BuildingElementHeightWidthInput { height, .. },
+        height,
         window_part_list,
         ..
     } = element
@@ -5713,7 +5665,6 @@ pub enum HeatBattery {
         /// Heat capacity of storage above phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_above_Phase_transition")]
         #[validate(exclusive_minimum = 0.)]
-        #[validate(exclusive_minimum = 0.)]
         heat_storage_kj_per_k_above_phase_transition: f64,
 
         /// Heat capacity of storage below phase transition (unit: kJ/K)
@@ -5939,8 +5890,12 @@ fn validate_at_least_one_efficiency_set(
 fn validate_flow_rates_and_efficiencies_length(
     data: &WasteWaterHeatRecoveryDetails,
 ) -> Result<(), serde_valid::validation::Error> {
-    // Validate system A (always required)
-    if data.flow_rates.len() != data.system_a_efficiencies.iter().flatten().count() {
+    // Validate system A
+    if data
+        .system_a_efficiencies
+        .as_ref()
+        .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
+    {
         return custom_validation_error(
             "flow_rates and system_a_efficiencies must have the same length",
         );
@@ -8274,7 +8229,7 @@ mod tests {
                     storage_loss_factor_1: Some(1.88),
                     storage_loss_factor_2: None,
                     rejected_factor_3: None,
-                    setpoint_temp: Some(10.),
+                    setpoint_temp: 10.,
                     daily_hw_usage: 120.,
                 })
                 .unwrap()
@@ -10459,10 +10414,9 @@ mod tests {
                     areal_heat_capacity: 0.0,
                     mass_distribution_class: MassDistributionClass::D,
                     solar_absorption_coeff: 0.0,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: None,
-                        height_and_width: None,
-                    },
+                    area: 0.0,
+                    width: 0.0,
+                    height: 0.0,
                 })
                 .unwrap()
             }
@@ -10497,10 +10451,9 @@ mod tests {
                     areal_heat_capacity: 0.0,
                     mass_distribution_class: MassDistributionClass::D,
                     solar_absorption_coeff: 0.0,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: None,
-                        height_and_width: None,
-                    },
+                    area: 0.0,
+                    width: 0.0,
+                    height: 0.0,
                 })
                 .unwrap()
             }
@@ -10537,10 +10490,9 @@ mod tests {
                     areal_heat_capacity: 15000.0,
                     mass_distribution_class: MassDistributionClass::I,
                     solar_absorption_coeff: 0.0,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: Some(25.0),
-                        height_and_width: None,
-                    },
+                    area: 25.0,
+                    height: 5.,
+                    width: 5.,
                 })
                 .unwrap()
             }
@@ -10574,13 +10526,9 @@ mod tests {
                     areal_heat_capacity: 15000.0,
                     mass_distribution_class: MassDistributionClass::I,
                     solar_absorption_coeff: 0.0,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: None,
-                        height_and_width: Some(BuildingElementHeightWidthInput {
-                            height: 3.0,
-                            width: 8.0,
-                        }),
-                    },
+                    area: 24.0,
+                    height: 3.0,
+                    width: 8.0,
                 })
                 .unwrap()
             }
@@ -10613,10 +10561,8 @@ mod tests {
                     g_value: 1.,
                     frame_area_fraction: 0.25,
                     base_height: 10.,
-                    area_input: BuildingElementHeightWidthInput {
-                        height: 10.,
-                        width: 5.,
-                    },
+                    height: 10.,
+                    width: 5.,
                     window_part_list: vec![WindowPart {
                         free_area_height: 1.6,
                         max_window_open_area: 3.,
@@ -10842,14 +10788,9 @@ mod tests {
                     pitch: 1.2,
                     orientation360: Some(180.0.into()),
                     base_height: 10.,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: Some(24.0),
-                        height_and_width: BuildingElementHeightWidthInput {
-                            height: 3.0,
-                            width: 8.0,
-                        }
-                        .into(),
-                    },
+                    area: 24.0,
+                    height: 3.0,
+                    width: 8.0,
                     areal_heat_capacity: 15000.,
                     mass_distribution_class: MassDistributionClass::I,
                 })

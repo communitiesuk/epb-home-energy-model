@@ -9,7 +9,8 @@ methodology for calculating the energy performance of buildings that is currentl
 instruction from the UK Department for Energy Security and Net Zero (DESNZ).
 
 This project constitutes a port into Rust of
-the [calculation engine](hhttps://dev.azure.com/Sustenic/Home%20Energy%20Model%20Reference/_git/Home%20Energy%20Model) written in Python produced as
+the [calculation engine](https://dev.azure.com/Sustenic/Home%20Energy%20Model%20Reference/_git/Home%20Energy%20Model)
+written in Python produced as
 a candidate specification of the Home Energy Model.
 
 Its purpose is to provide a library that is significantly more performant than the Python specification code, as well as
@@ -20,7 +21,6 @@ The project is as yet functionally incomplete, but we have begun working on a te
 to demonstrate complete 1:1 behavioural parity with the specification code.
 
 ## Running the engine
-
 
 ### From CLI
 
@@ -37,10 +37,11 @@ Fully running the engine requires a weather file in EPW format and an input JSON
 stable):
 
 ```
-cargo run --release --features="clap indicatif" -- path/to/input.json -e path/to/weather_file.epw
+cargo run --release --features="cli indicatif" -- path/to/input.json -e path/to/weather_file.epw
 ```
 
-The `clap` feature above is mandatory. The `indicatif` feature switches on the output of a progress bar.
+The `cli` feature above is mandatory for a run from the CLI. The `indicatif` feature switches on the output of a
+progress bar.
 
 ### In AWS Lambda
 
@@ -62,6 +63,7 @@ cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
 ```
 
 You can also test the lambda by running it locally:
+
 ```bash
 cargo lambda watch --package hem-lambda
 ```
@@ -75,8 +77,8 @@ Then you can use Postman for example to call it (e.g. http://localhost:9000/lamb
 If you've done work in a pair or ensemble why not add your co-author(s) to the commit? This way everyone involved is
 given credit and people know who they can approach for questions about specific commits. To make this easy there is a
 commit template with a list of regular contributors to this code base. You will find it at the root of this
-project: `commit_template.txt`. Each row represents a possible co-author, however everyone is commented out by default (
-using `#`), and any row that is commented out will not show up in the commit.
+project: `commit_template.txt`. Each row represents a possible co-author, however everyone is commented out by default
+(using `#`), and any row that is commented out will not show up in the commit.
 
 #### Editing the template
 

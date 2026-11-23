@@ -11,11 +11,11 @@ use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::TempInternalAirFn;
 use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
@@ -124,7 +124,10 @@ impl Zone {
                 .sum::<f64>(),
         };
 
-        let area_el_total = FSum::with_all(building_elements.values().map(|el| el.area())).value();
+        let area_el_total = building_elements
+            .values()
+            .map(|el| el.area())
+            .sum_with_accumulator::<Sum2<_>>();
         let c_int = K_M_INT * area;
 
         // Calculate:
@@ -476,21 +479,22 @@ impl Zone {
         //      interface as other ventilation element classes, which could make
         //      future development more difficult. Ideally, we would find a
         //      cleaner way to implement this difference.
-        matrix_a[(self.zone_idx, self.zone_idx)] =
-            (self.c_int / delta_t)
-                + FSum::with_all(self.building_elements.iter().enumerate().map(
-                    |(eli_idx, nel)| {
-                        let NamedBuildingElement { element: eli, .. } = nel;
-                        eli.area()
-                            * eli.h_ci(
-                                temp_prev[self.zone_idx],
-                                temp_prev[self.element_positions[eli_idx].1],
-                            )
-                    },
-                ))
-                .value()
-                + h_ve
-                + self.tb_heat_trans_coeff;
+        matrix_a[(self.zone_idx, self.zone_idx)] = (self.c_int / delta_t)
+            + self
+                .building_elements
+                .iter()
+                .enumerate()
+                .map(|(eli_idx, nel)| {
+                    let NamedBuildingElement { element: eli, .. } = nel;
+                    eli.area()
+                        * eli.h_ci(
+                            temp_prev[self.zone_idx],
+                            temp_prev[self.element_positions[eli_idx].1],
+                        )
+                })
+                .sum_with_accumulator::<Sum2<_>>()
+            + h_ve
+            + self.tb_heat_trans_coeff;
 
         // Add final sum term for LHS of eqn 38 in loop below.
         // These are coeffs for temperatures of internal surface nodes of
@@ -513,7 +517,7 @@ impl Zone {
             + F_SOL_C * gains_solar
             + f_hc_c * gains_heat_cool;
 
-        let vector_x = self.fast_solver(matrix_a, vector_b)?;
+        let vector_x = self.fast_solver(&mut matrix_a, &mut vector_b)?;
 
         let heat_balance = print_heat_balance.then(|| {
             // Collect outputs, in W, for heat balance at air node
@@ -772,17 +776,9 @@ impl Zone {
     ///   external surface, and calculate temperatures in sequence
     fn fast_solver(
         &self,
-        coeffs: DMatrix<f64>,
-        rhs: DVector<f64>,
+        coeffs: &mut DMatrix<f64>,
+        rhs: &mut DVector<f64>,
     ) -> Result<Vec<f64>, SolverError> {
-        // Init matrix with zeroes
-        // Number of rows in matrix = number of columns
-        // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
-        let mut coeffs_adj: DMatrix<f64> = DMatrix::zeros(self.no_of_temps, self.no_of_temps);
-
-        // Init rhs_adj with zeroes (length = number of nodes + 1 for overall zone heat balance)
-        let mut rhs_adj: DVector<f64> = DVector::zeros(self.no_of_temps);
-
         // Init matrix with zeroes
         // Number of rows in matrix = number of columns
         // = total number of internal surface nodes + 1 for internal air node
@@ -798,23 +794,22 @@ impl Zone {
             let (idx_ext_surface, idx_int_surface) = self.element_positions[el_idx];
 
             // No adjusted coeffs and RHS for external surface heat balance eqn
-            coeffs_adj[(idx_ext_surface, idx_ext_surface)] =
-                coeffs[(idx_ext_surface, idx_ext_surface)];
-            rhs_adj[idx_ext_surface] = rhs[idx_ext_surface];
 
             // Loop over nodes, from inside node adjacent to external surface, to internal surface
+            // adjusting the coefficients in place as none of the adjustments rely on values yet to be adjusted
             for idx in (idx_ext_surface + 1)..(idx_int_surface + 1) {
                 // Calculate adjusted coeffs and RHS for each heat balance eqn
-                coeffs_adj[(idx, idx)] = coeffs[(idx, idx)]
-                    - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)]
-                        / coeffs_adj[(idx - 1, idx - 1)];
-                rhs_adj[idx] = rhs[idx]
-                    - rhs_adj[idx - 1] * coeffs[(idx, idx - 1)] / coeffs_adj[(idx - 1, idx - 1)];
+                let adjusted_diagonal = coeffs[(idx, idx)]
+                    - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)] / coeffs[(idx - 1, idx - 1)];
+                let adjusted_rhs =
+                    rhs[idx] - rhs[idx - 1] * coeffs[(idx, idx - 1)] / coeffs[(idx - 1, idx - 1)];
+                coeffs[(idx, idx)] = adjusted_diagonal;
+                rhs[idx] = adjusted_rhs;
             }
 
             // Construct matrix eqn for internal surface nodes only (and air node, after this loop)
-            matrix_a[(el_idx, el_idx)] = coeffs_adj[(idx_int_surface, idx_int_surface)];
-            vector_b[el_idx] = rhs_adj[idx_int_surface];
+            matrix_a[(el_idx, el_idx)] = coeffs[(idx_int_surface, idx_int_surface)];
+            vector_b[el_idx] = rhs[idx_int_surface];
 
             for (el_idx_other, _) in self.building_elements.iter().enumerate() {
                 if el_idx == el_idx_other {
@@ -863,8 +858,8 @@ impl Zone {
             // Loop over nodes, from internal inside node (i.e. inside node nearest to the
             // internal surface) to external surface, and calculate temperatures in sequence
             for idx in (idx_ext_surface..idx_int_surface).rev() {
-                temperatures[idx] = (rhs_adj[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
-                    / coeffs_adj[(idx, idx)];
+                temperatures[idx] = (rhs[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
+                    / coeffs[(idx, idx)];
             }
         }
 
@@ -881,13 +876,15 @@ impl Zone {
         let temp_int_air = temp_vector[self.zone_idx];
 
         // Mean radiant temperature is weighted average of internal surface temperatures
-        let temp_mean_radiant = FSum::with_all(self.building_elements.iter().enumerate().map(
-            |(eli_idx, nel)| {
+        let temp_mean_radiant = self
+            .building_elements
+            .iter()
+            .enumerate()
+            .map(|(eli_idx, nel)| {
                 let NamedBuildingElement { element: eli, .. } = nel;
                 eli.area() * temp_vector[self.element_positions[eli_idx].1]
-            },
-        ))
-        .value()
+            })
+            .sum_with_accumulator::<Sum2<_>>()
             / self.area_el_total;
         (temp_int_air + temp_mean_radiant) / 2.0
     }
@@ -1286,7 +1283,7 @@ impl Zone {
         } else if temp_free < temp_setpnt_heat
             && !relative_eq!(
                 temp_free,
-                temp_setpnt_cool,
+                temp_setpnt_heat,
                 epsilon = 1e-10,
                 max_relative = 1e-9
             )
@@ -1480,7 +1477,7 @@ fn isclose(a: &[f64], b: &[f64], rtol: Option<f64>, atol: Option<f64>) -> bool {
     let atol = atol.unwrap_or(1e-8);
     a.iter()
         .zip(b)
-        .all(|(a, b)| relative_eq!(a, b, max_relative = rtol, epsilon = atol))
+        .all(|(a, b)| (a - b).abs() <= atol + rtol * b.abs())
 }
 
 #[derive(Debug, Error)]
@@ -2450,7 +2447,7 @@ mod tests {
         let expected = coeffs.clone().lu().solve(&rhs).unwrap();
 
         let zone = zone(thermal_bridging_objects, None).unwrap();
-        let result = &zone.fast_solver(coeffs, rhs).unwrap();
+        let result = &zone.fast_solver(&mut coeffs, &mut rhs).unwrap();
 
         for (i, expected_temp) in expected.data.as_vec().iter().enumerate() {
             assert_relative_eq!(result[i], expected_temp);

@@ -9,13 +9,13 @@ use crate::input::{
     ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
     SmartApplianceBattery, MAIN_REFERENCE,
 };
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
 use delegate::delegate;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -635,7 +635,13 @@ impl ChargeControl {
                 // Can't calculate tomorrow's demand if no past_hdh, so assume zero to store
                 (_, Some(0.)) => Some(0.),
                 (Some(future_hdh), Some(past_hdh)) => Some(
-                    future_hdh / past_hdh * FSum::with_all(demand.read().iter().flatten()).value(),
+                    future_hdh / past_hdh
+                        * demand
+                            .read()
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .sum_with_accumulator::<Sum2<_>>(),
                 ),
             }
         };
@@ -1544,16 +1550,15 @@ impl SmartApplianceControl {
             // (users for whom demand is negative)
             // to make it more or less preferable to use it immediately or export/charge battery
             self.non_appliance_demand_24hr[name.as_str()][idx_24hr].store(
-                FSum::with_all(
-                    supply
-                        .read()
-                        .results_by_end_user_single_step(t_idx)
-                        .iter()
-                        .filter_map(|(name, user)| {
-                            (!self.appliance_names.contains(name)).then_some(user)
-                        }),
-                )
-                .value(),
+                supply
+                    .read()
+                    .results_by_end_user_single_step(t_idx)
+                    .iter()
+                    .filter_map(|(name, user)| {
+                        (!self.appliance_names.contains(name)).then_some(user)
+                    })
+                    .copied()
+                    .sum_with_accumulator::<Sum2<_>>(),
                 Ordering::SeqCst,
             );
 
@@ -1918,7 +1923,7 @@ impl CombinationTimeControl {
                             })?.expect("Results not expected to be empty")
                         }
                         ControlCombinationOperation::Mean => {
-                            let results_sum = FSum::with_all(results
+                            let results_sum = results
                                 .iter()
                                 .filter_map(|x| {
                                     if let SetpointOrBoolean::Setpoint(Some(t)) = x {
@@ -1926,7 +1931,7 @@ impl CombinationTimeControl {
                                     } else {
                                         None
                                     }
-                                })).value();
+                                }).sum_with_accumulator::<Sum2<_>>();
 
                             // Return the arithmetic mean of the combined setpoint values
                             SetpointOrBoolean::Setpoint(Some(results_sum / results.len() as f64))

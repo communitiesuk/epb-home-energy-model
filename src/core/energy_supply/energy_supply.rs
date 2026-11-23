@@ -5,12 +5,12 @@ use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::core::simulation_time::Timestep;
 use crate::errors::NotImplementedError;
 use crate::input::FuelType;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -889,9 +889,14 @@ impl EnergySupply {
             .unwrap()
             .store(0., Ordering::SeqCst);
 
-        let supplies_sum =
-            FSum::with_all(supplies.iter().map(|d| d.load(Ordering::SeqCst))).value();
-        let demands_sum = FSum::with_all(demands.iter().map(|d| d.load(Ordering::SeqCst))).value();
+        let supplies_sum = supplies
+            .iter()
+            .map(|d| d.load(Ordering::SeqCst))
+            .sum_with_accumulator::<Sum2<_>>();
+        let demands_sum = demands
+            .iter()
+            .map(|d| d.load(Ordering::SeqCst))
+            .sum_with_accumulator::<Sum2<_>>();
 
         self.beta_factor.get(timestep_idx).unwrap().store(
             self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv)?,

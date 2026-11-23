@@ -17,11 +17,11 @@ use crate::input::{
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::statistics::np_interp;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::{abs_diff_eq, relative_eq};
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::cmp::PartialEq;
@@ -403,12 +403,10 @@ impl BoilerServiceWaterCombi {
                 .cold_feed
                 .draw_off_water(event.volume_hot, simtime)?
                 .into_iter();
-            let total_temperatures_by_volume: f64 = FSum::with_all(
-                list_temp_vol
-                    .clone()
-                    .map(|(temperature, volume)| temperature * volume),
-            )
-            .value();
+            let total_temperatures_by_volume: f64 = list_temp_vol
+                .clone()
+                .map(|(temperature, volume)| temperature * volume)
+                .sum_with_accumulator::<Sum2<_>>();
 
             let total_volume: f64 = list_temp_vol.map(|(_, volume)| volume).sum();
             let temp_cold_water = total_temperatures_by_volume / total_volume;
@@ -1516,17 +1514,23 @@ impl Boiler {
     }
 
     fn sum_space_heating_service_results_energy_output_required(&self) -> f64 {
-        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
-            (x.service_type == ServiceType::Space).then_some(x.energy_output_required)
-        }))
-        .value()
+        self.service_results
+            .read()
+            .iter()
+            .filter_map(|x| {
+                (x.service_type == ServiceType::Space).then_some(x.energy_output_required)
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     fn sum_space_heating_service_results_energy_output_provided(&self) -> f64 {
-        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
-            (x.service_type == ServiceType::Space).then_some(x.energy_output_provided)
-        }))
-        .value()
+        self.service_results
+            .read()
+            .iter()
+            .filter_map(|x| {
+                (x.service_type == ServiceType::Space).then_some(x.energy_output_provided)
+            })
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     /// Calculate boiler fuel demand for all services (excl. auxiliary),
@@ -1976,7 +1980,7 @@ mod tests {
                 storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python missing a value
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2116,7 +2120,7 @@ mod tests {
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 combi_type_specific_details: CombiTypeSpecificDetails::Storage {
                     combi_storage_loss_in_test,
                     store_volume,
@@ -2164,7 +2168,7 @@ mod tests {
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 daily_hw_usage: 132.5802,
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have a value
                 combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
                     keep_hot_test_hours,
                     combi_keep_hot_fuel,
@@ -2207,7 +2211,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have a value for this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2244,7 +2248,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2281,7 +2285,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: "mains water".into(),
                 heat_source_wet: "boiler".into(),
@@ -2421,7 +2425,7 @@ mod tests {
                 // rejected_energy_2: 0.0008 // field does not exist - seems to be a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
-                setpoint_temp: None,
+                setpoint_temp: 22., // upstream Python does not have this field in the fixture
                 daily_hw_usage: 132.5802,
                 cold_water_source: Default::default(),
                 heat_source_wet: Default::default(),

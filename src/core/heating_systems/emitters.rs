@@ -25,13 +25,11 @@ use crate::input::{
 use crate::output::OutputEmitters;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
-use accurate::sum::Sum2;
-use accurate::traits::SumWithAccumulator;
+use accurate::{sum::Sum2, traits::*};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use fsum::FSum;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
@@ -581,10 +579,9 @@ impl Emitters {
         // weighted average for each emitter
         let power_total_weight = self.power_output_emitter_weight(simtime);
 
-        FSum::with_all(
-            (0..frac_convective.len()).map(|i| power_total_weight[i] * frac_convective[i]),
-        )
-        .value()
+        (0..frac_convective.len())
+            .map(|i| power_total_weight[i] * frac_convective[i])
+            .sum_with_accumulator::<Sum2<_>>()
     }
 
     /// Weighted average of emitter power output
@@ -622,7 +619,10 @@ impl Emitters {
         // If this error is triggered, then there is probably an error in the code above
         // NB. debug_* assertions are elided for production builds
         let six_dec_places_divisor = 1e6;
-        let weight_sum = (FSum::with_all(power_total_weight.iter().copied()).value()
+        let weight_sum = (power_total_weight
+            .iter()
+            .copied()
+            .sum_with_accumulator::<Sum2<_>>()
             * six_dec_places_divisor)
             .round()
             / six_dec_places_divisor;
@@ -796,7 +796,7 @@ impl Emitters {
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
-                .sum::<f64>())
+                .sum_with_accumulator::<Sum2<_>>())
                 / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")]
         }
     }
@@ -1266,7 +1266,6 @@ impl Emitters {
             let c_n_pairs = self.extract_c_n_pairs();
             let thermal_mass = self.thermal_mass;
             let temp_emitter_prev = self.temp_emitter_prev();
-
             let root_func = Box::new(move |time_cooldown, args| {
                 let c_n_pairs = c_n_pairs.clone();
                 Self::energy_surplus_during_cooldown_pure(

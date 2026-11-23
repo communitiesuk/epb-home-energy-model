@@ -25,13 +25,13 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::input::{ControlLogicType, HeatBattery};
 use crate::statistics::{linspace, np_interp};
+use accurate::{sum::Sum2, traits::*};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
 use either::Either;
-use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -485,8 +485,10 @@ impl HeatStorageDryCore {
 
         let power_interp = LinearInterpolator::new(soc_array, &power_func(soc_array));
 
-        let power_min_interp =
-            LinearInterpolator::new(&self.soc_min_array, &(self.power_min_func)(soc_array));
+        let power_min_interp = LinearInterpolator::new(
+            &self.soc_min_array,
+            &(self.power_min_func)(&self.soc_min_array),
+        );
 
         // Charging: determine the maximum power available for charging
         let target_charge = self.target_electric_charge(timestep);
@@ -1885,13 +1887,11 @@ impl HeatBatteryDryCore {
                     auxiliary_results_annual.insert(
                         (parameter.into(), param_unit.map(Into::into)),
                         ResultParamValue::from(
-                            FSum::with_all(
-                                auxiliary_results_per_timestep
-                                    [&(parameter.into(), param_unit.map(Into::into))]
-                                    .iter()
-                                    .map(ResultParamValue::as_f64),
-                            )
-                            .value(),
+                            auxiliary_results_per_timestep
+                                [&(parameter.into(), param_unit.map(Into::into))]
+                                .iter()
+                                .map(ResultParamValue::as_f64)
+                                .sum_with_accumulator::<Sum2<_>>(),
                         ),
                     );
                 }
@@ -1904,13 +1904,11 @@ impl HeatBatteryDryCore {
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
                     let parameter_annual_total = ResultParamValue::from(
-                        FSum::with_all(
-                            results_per_timestep[&service_name]
-                                [&(parameter.into(), param_unit.map(Into::into))]
-                                .iter()
-                                .map(ResultParamValue::as_f64),
-                        )
-                        .value(),
+                        results_per_timestep[&service_name]
+                            [&(parameter.into(), param_unit.map(Into::into))]
+                            .iter()
+                            .map(ResultParamValue::as_f64)
+                            .sum_with_accumulator::<Sum2<_>>(),
                     );
 
                     results_annual[&service_name].insert(

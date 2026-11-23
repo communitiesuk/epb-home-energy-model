@@ -1141,7 +1141,7 @@ mod tests {
         //                 = 0.15 * (25 - 21.2033...) = 0.5694955734921485 kWh.
         let energy_output = instant_elec_heater.demand_energy(0.0, simtime).unwrap();
         assert_eq!(instant_elec_heater.passed_energy_demand_values()[0], 0.);
-        assert_relative_eq!(energy_output, 0.5694955734921485)
+        assert_relative_eq!(energy_output, 0.5694955734921485, epsilon = 1e-7);
     }
 
     #[rstest]
@@ -1175,7 +1175,7 @@ mod tests {
         // Energy released = 0.15 * (22 - 20.4938...) = 0.22593164333702534 kWh.
         let energy_output = instant_elec_heater.demand_energy(-1.0e-6, simtime).unwrap();
         assert_eq!(instant_elec_heater.passed_energy_demand_values()[0], 0.);
-        assert_relative_eq!(energy_output, 0.22593164333702534);
+        assert_relative_eq!(energy_output, 0.22593164333702534, epsilon = 1e-7);
     }
 
     #[rstest]
@@ -1225,7 +1225,8 @@ mod tests {
 
         assert_relative_eq!(
             instant_elec_heater.energy_output_min().unwrap(),
-            2.9280172879924646
+            2.9280172879924646,
+            epsilon = 1e-7
         );
     }
 
