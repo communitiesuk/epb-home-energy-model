@@ -180,6 +180,15 @@ pub const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
 pub(crate) const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
 pub const R_SE: f64 = 1.0 / (H_CE + H_RE);
 
+/// Internal surface resistance of a below-ground basement wall, in m2 K / W, from the
+/// conventional values of BS EN ISO 6946:2017 Table 7, the same source as the 0.17 the ground
+/// floor takes for its own equivalent thickness. Heat flows horizontally through a below-ground
+/// wall, which is vertical and so falls in Table 7's horizontal column.
+/// A fixed value rather than one selected from pitch as r_si is: Formula (15) describes the
+/// below-ground wall whichever ground element evaluates it, so the evaluating element's pitch
+/// is not the wall's orientation.
+const R_SI_BASEMENT_WALL: f64 = 0.13;
+
 #[derive(Debug)]
 pub(crate) enum BuildingElement {
     Opaque(BuildingElementOpaque),
@@ -711,7 +720,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
     fn init_heat_transfer_other_side_ground(
         &mut self,
         r_vi: f64,
-        d_we: f64,
+        walls_thickness: f64,
         thermal_conductivity: f64,
         r_si: f64,
         thermal_resistance_floor_construction: f64,
@@ -734,8 +743,9 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         // as we are using closures which cannot be hoisted
 
         let total_equiv_thickness = || -> f64 {
-            d_we + thermal_conductivity
-                * (r_si + thermal_resistance_floor_construction + self.r_se())
+            walls_thickness
+                + thermal_conductivity
+                    * (r_si + thermal_resistance_floor_construction + self.r_se())
         };
 
         let d_eq = total_equiv_thickness();
@@ -780,8 +790,11 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
 
             // Equivalent thickness for the basement walls
             let equiv_thick_base_wall = |r_w_b| -> f64 {
-                // r_w_b is the thermal resistance of the walls
-                thermal_conductivity * (r_si + r_w_b + self.r_se())
+                // r_w_b is the thermal resistance of the walls. The surface resistance is the
+                // horizontal-flow one: r_si here is the floor's downward value, which BS EN ISO
+                // 13370:2017 Formula (12) takes for the floor's own equivalent thickness but which
+                // Formula (15) does not, the heat flow through a below-ground wall being sideways.
+                thermal_conductivity * (R_SI_BASEMENT_WALL + r_w_b + self.r_se())
             };
 
             // Heated basement periodic coefficients
@@ -859,8 +872,9 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
 
                 Ok(u_x_perimeter + u_x_ventilation)
             };
-            let total_equiv_thickness_sus =
-                |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
+            let total_equiv_thickness_sus = |r_f_ins| -> f64 {
+                walls_thickness + thermal_conductivity * (r_si + r_f_ins + self.r_se())
+            };
 
             // thermal transmittance of suspended part of floor
             let thermal_transmittance_sus_floor =
@@ -891,18 +905,32 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 let d_g = total_equiv_thickness_sus(r_f_ins);
 
                 // H.6.2. Internal temperature variation
+                // In the standard, equation (H.6) is printed as
+                // H_pi = A * [1/U_f;sus + 1/(lambda_g/delta + U_x)]. That form is
+                // dimensionally inconsistent: the bracket is a sum of two thermal
+                // resistances in m2.K/W, so the printed product is in m4.K/W rather than
+                // W/K. HEM therefore divides the area by the bracket rather than
+                // multiplying by it, which is the same series combination that formula (8)
+                // of 7.2 applies to the steady-state coefficient, with U_g replaced by
+                // lambda_g/delta.
                 let h_pi = total_area
-                    * (1. / u_f + 1. / (thermal_conductivity / periodic_penetration_depth + u_x));
+                    / (1. / u_f + 1. / (thermal_conductivity / periodic_penetration_depth + u_x));
 
                 // H.6.3. External temperature variation
                 // 0.37 is constant in the standard but not labelled
+                // In the standard, equation (H.7) is printed with its divisor as the single
+                // fraction lambda_g/(delta + U_x + U_f). That form is dimensionally
+                // inconsistent: it adds a length in m to two thermal transmittances in
+                // W/(m2.K). HEM therefore divides by lambda_g/delta + U_x + U_f, a sum of
+                // three transmittances, which is what the numerator in W/K requires for
+                // H_pe to come out in W/K.
                 let h_pe = u_f
                     * ((0.37
                         * perimeter
                         * thermal_conductivity
                         * (periodic_penetration_depth / d_g + 1.).ln()
                         + u_x * total_area)
-                        / (thermal_conductivity / (periodic_penetration_depth + u_x + u_f)));
+                        / (thermal_conductivity / periodic_penetration_depth + u_x + u_f));
                 Ok((h_pi, h_pe))
             };
 
@@ -2561,7 +2589,7 @@ impl BuildingElementGround {
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         floor_data: &FloorData,
-        d_we: f64,
+        walls_thickness: f64,
         perimeter: f64,
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
@@ -2626,7 +2654,7 @@ impl BuildingElementGround {
         );
         new_ground.init_heat_transfer_other_side_ground(
             r_vi,
-            d_we,
+            walls_thickness,
             thermal_conductivity,
             r_si,
             thermal_resistance_floor_construction,
@@ -4431,18 +4459,200 @@ mod tests {
 
         let be_sheltered =
             create_building_element_ground(simulation_time_for_ground, suspended_floor_sheltered);
-        assert_relative_eq!(be_sheltered.h_pi, 21.76809338521401);
-        assert_relative_eq!(be_sheltered.h_pe, 5208.393950400433);
+        assert_relative_eq!(be_sheltered.h_pi, 41.34491634491634);
+        assert_relative_eq!(be_sheltered.h_pe, 39.958168001964864);
 
         let be_average =
             create_building_element_ground(simulation_time_for_ground, suspended_floor_average);
-        assert_relative_eq!(be_average.h_pi, 20.285704885671986);
-        assert_relative_eq!(be_average.h_pe, 26144.01441657715);
+        assert_relative_eq!(be_average.h_pi, 44.36621774162158);
+        assert_relative_eq!(be_average.h_pe, 43.73710435805926);
 
         let be_exposed =
             create_building_element_ground(simulation_time_for_ground, suspended_floor_exposed);
-        assert_relative_eq!(be_exposed.h_pi, 19.75335084679448);
-        assert_relative_eq!(be_exposed.h_pe, 96370.39574909392);
+        assert_relative_eq!(be_exposed.h_pi, 45.56189008033792);
+        assert_relative_eq!(be_exposed.h_pe, 45.23260880381861);
+    }
+
+    /// Build a dwelling-scale suspended floor on a plausible UK annual weather series.
+    ///
+    /// 60 m2 of new-build suspended timber floor at U 0.18 W/(m2.K) over a naturally
+    /// ventilated void with code-minimum air brick area, on a sinusoidal annual air
+    /// temperature with its minimum in January (annual mean 10.0 degC, amplitude
+    /// 6.5 K) and a 4.0 m/s annual mean wind speed.
+    #[fixture]
+    fn dwelling_scale_suspended_floor(
+        simulation_time_for_ground: SimulationTime,
+    ) -> BuildingElementGround {
+        let air_temps: Vec<f64> = (0..8760)
+            .map(|hour| 10.0 - 6.5 * (2.0 * std::f64::consts::PI * (hour as f64 / 8760.0)).cos())
+            .collect();
+
+        let simtime_iterator = simulation_time_for_ground.iter();
+
+        let ec = ExternalConditions::new(
+            &simtime_iterator,
+            air_temps,
+            vec![4.0; 8760],
+            vec![],
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            vec![],
+            51.5,
+            0.0,
+            0,
+            0,
+            0.into(),
+            1.,
+            1.into(),
+            DaylightSavingsConfig::NotApplicable.into(),
+            false,
+            false,
+            None,
+        );
+
+        BuildingElementGround::new(
+            60.0,
+            60.0,
+            180.0,
+            0.18,
+            5.0,
+            75_000.0,
+            MassDistributionClass::I,
+            &FloorData::SuspendedFloor {
+                height_upper_surface: 0.3,
+                thermal_transmission_walls: 1.5,
+                area_per_perimeter_vent: 0.0015,
+                shield_fact_location: WindShieldLocation::Average.into(),
+                control_smart_air_brick: None,
+                vents_open_during_airtightness_test: None,
+                thermal_resistance_of_insulation: 0.0,
+            },
+            0.3,
+            32.0,
+            0.0,
+            ec.into(),
+            WindShieldLocation::Average,
+            None,
+            &simtime_iterator,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    /// Test the suspended floor periodic coefficients against a hand derivation.
+    ///
+    /// Both coefficients are heat transfer coefficients in W/K. The derivation below
+    /// follows BS EN ISO 13370:2017 H.6.2 and H.6.3 with the corrections HEM makes to
+    /// the two printed equations to render them dimensionally valid, which are set out
+    /// in the comments in init_suspended_floor. It uses the ground properties HEM
+    /// takes from that standard: thermal
+    /// conductivity lambda_g = 1.5 W/(m.K) (Table 7, clay or silt), periodic
+    /// penetration depth delta = 2.2 m (Table H.1), internal surface resistance
+    /// r_si = 0.17 m2.K/W and external surface resistance
+    /// r_se = 1 / (20.0 + 4.14) = 0.041425020712510356 m2.K/W.
+    ///
+    /// Fixture: A = 60 m2, P = 32 m, R_f;sus = 5.0 m2.K/W, h = 0.3 m,
+    /// U_w = 1.5 W/(m2.K), epsilon = 0.0015 m2/m, v = 4.0 m/s, f_w = 0.05 (average
+    /// shielding, Table 8), d_we = 0.3 m, R_f;ins = 0.0 m2.K/W.
+    ///
+    /// Intermediates, from 7.2:
+    ///            U_f;sus = 1 / (5.0 + 2 x 0.17) = 1 / 5.34 = 0.18726591760299627 W/(m2.K)
+    ///            B' = A / (0.5 P) = 60 / 16 = 3.75 m
+    ///           U_x = 2 (h U_w / B') + 1450 (epsilon v f_w) / B'
+    ///                = 2 (0.3 x 1.5 / 3.75) + 1450 (0.0015 x 4.0 x 0.05) / 3.75
+    ///                = 0.24 + 0.116 = 0.356 W/(m2.K)
+    ///            lambda_g / delta = 1.5 / 2.2 = 0.6818181818181818 W/(m2.K)
+    ///            d_g = d_we + lambda_g (r_si + R_f;ins + r_se)
+    ///                 = 0.3 + 1.5 (0.17 + 0.0 + 0.041425020712510356)
+    ///                 = 0.6171375310687656 m
+    ///
+    ///        H.6.2:
+    ///            h_pi = A / (1 / U_f;sus + 1 / (lambda_g / delta + U_x))
+    ///                  = 60 / (5.34 + 1 / 1.0378181818181818)
+    ///                  = 60 / (5.34 + 0.9635599159074983)
+    ///                  = 60 / 6.303559915907498
+    ///                  = 9.518430981925876 W/K
+    ///
+    ///        H.6.3:
+    ///            numerator = 0.37 P lambda_g ln(delta / d_g + 1) + U_x A
+    ///                      = 0.37 x 32 x 1.5 x ln(4.564845580190231) + 0.356 x 60
+    ///                      = 26.966512033524413 + 21.36
+    ///                      = 48.32651203352441 W/K
+    ///            divisor   = lambda_g / delta + U_x + U_f;sus
+    ///                      = 0.6818181818181818 + 0.356 + 0.18726591760299627
+    ///                      = 1.225084099421178 W/(m2.K)
+    ///            h_pe      = U_f;sus x numerator / divisor
+    ///                      = 0.18726591760299627 x 48.32651203352441 / 1.225084099421178
+    ///                      = 7.387173357964606 W/K
+    ///
+    /// Both results are checked against the steady-state coefficient of the same
+    /// floor, A x U = 60 x 0.18 = 10.8 W/K. That comparison is the point of the
+    /// magnitudes quoted here: the periodic coefficients describe the annual swing in
+    /// the heat flow along the same path as the steady-state coefficient, through the
+    /// same deck and the same ventilated void, so neither can be far from it. Both
+    /// come out just below it and of the same order, and h_pi in particular lands
+    /// close to the A x U_fg;sus = 9.578173469445220 W/K that formula (8) of 7.2 gives
+    /// for this fixture, because lambda_g / delta = 0.682 W/(m2.K) and the
+    /// U_g = 0.726 W/(m2.K) of formula (10) are close for this geometry and the two
+    /// expressions are otherwise the same series combination. Evaluating the equations
+    /// exactly as they are typeset in the standard instead returns
+    /// 378.2135949544499 m4.K/W for h_pi, which is 35 times A x U and is not even a
+    /// heat transfer coefficient, and 16.55087058404477 W/K for h_pe, because the
+    /// printed divisor lambda_g / (delta + U_x + U_f) adds a length in m to two
+    /// thermal transmittances in W/(m2.K).
+    fn test_suspended_floor_periodic_heat_transfer_coefficients(
+        dwelling_scale_suspended_floor: BuildingElementGround,
+    ) {
+        let element = dwelling_scale_suspended_floor;
+
+        assert_relative_eq!(element.h_pi, 9.518430981925876, epsilon = 1e-8);
+        assert_relative_eq!(element.h_pe, 7.387173357964606, epsilon = 1e-8);
+    }
+
+    #[rstest]
+    /// Test the virtual ground temperature of a dwelling-scale suspended floor.
+    ///
+    /// The virtual ground temperature carries the periodic coefficients into the zone
+    /// heat balance, so an error in either of them shows up here as a temperature
+    /// well outside the range the climate allows. The hand derivation below follows
+    /// BS EN ISO 13370:2017 C.4 and F.2 for the first timestep, which falls in
+    /// January, using the coefficients derived in
+    /// test_suspended_floor_periodic_heat_transfer_coefficients and the temperatures
+    /// the fixture supplies: annual mean external 10.0 degC, January mean external
+    /// 3.803532995594289 degC, annual mean internal 20.080504801232877 degC and
+    ///        January mean internal 19.46399546 degC. The wall/floor junction is not
+    ///        insulated against in this fixture (psi = 0), which drops the junction terms.
+    ///
+    ///        C.4:
+    ///            Q_m = U A (T_i;ann - T_e;ann) - h_pi (T_i;ann - T_i;m)
+    ///                                          + h_pe (T_e;ann - T_e;m)
+    ///                = 0.18 x 60 x (20.080504801232877 - 10.0)
+    ///                  - 9.518430981925876 x (20.080504801232877 - 19.46399546)
+    ///                  + 7.387173357964606 x (10.0 - 3.803532995594289)
+    ///                 = 108.86945185331506 - 5.868201614237731 + 45.774375968452624
+    ///                 = 148.77562620752994 W
+    ///
+    ///         F.2:
+    ///             T_ground = T_i;m - Q_m / (A U)
+    ///                      = 19.46399546 - 148.77562620752994 / 10.8
+    ///                      = 5.688474514858337 degC
+    ///
+    /// That sits between the January external mean and the internal temperature, and
+    /// nearer the external one, which is what a ventilated void under an insulated
+    /// deck gives. Evaluating H.6.2 and H.6.3 exactly as they are typeset in the
+    /// standard, without the corrections described in the comments in
+    /// init_suspended_floor, returns 21.47749906640265 degC for this fixture, above
+    /// every internal and external temperature in the weather series, which is the
+    /// failure this test exists to catch.
+    fn test_temp_ext_suspended_floor_dwelling_scale(
+        dwelling_scale_suspended_floor: BuildingElementGround,
+        simulation_time_for_ground: SimulationTime,
+    ) {
+        let element = dwelling_scale_suspended_floor;
+        let temp_ground_virtual =
+            element.temp_ext(simulation_time_for_ground.iter().next().unwrap());
+
+        assert_relative_eq!(temp_ground_virtual, 5.688474514858337, epsilon = 1e-8);
     }
 
     // skipping test_wind_shield_fact_invalid_location as Rust would not allow invalid shield factor
@@ -4603,10 +4813,10 @@ mod tests {
     ) {
         let results = [
             [
-                -0.6471789638993641,
-                -0.6471789638993641,
-                2.505131315506123,
-                2.505131315506123,
+                8.166224365303052,
+                8.166224365303052,
+                8.758115389650408,
+                8.758115389650408,
             ],
             [
                 7.428039862980361,
@@ -4621,10 +4831,10 @@ mod tests {
                 8.448604706949336,
             ],
             [
-                8.366361777378224,
-                8.366361777378224,
-                8.86671506616569,
-                8.86671506616569,
+                8.365206081446978,
+                8.365206081446978,
+                8.865866702163949,
+                8.865866702163949,
             ],
             [
                 6.293446005722892,
@@ -4725,7 +4935,7 @@ mod tests {
         // With vents closed, u_x_ventilation is reduced to zero, resulting in warmer temp_ext
         assert_relative_eq!(
             temp_ext_with_closed_vents,
-            4.22336883751537,
+            8.470747965890293,
             epsilon = 1e-10
         );
     }
@@ -5271,6 +5481,10 @@ mod tests {
             .is_open
             .load(Ordering::SeqCst));
     }
+
+    // following mock complex method on external conditions so disproportionately complex to implement
+    // - test_adjust_treatment_opens_when_state_undeclared
+    // - test_adjust_treatment_undeclared_state_reduces_solar_gains
 
     #[rstest]
     fn test_adjust_treatment_not_opened(
