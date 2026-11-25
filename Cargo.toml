@@ -52,6 +52,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", optional = true }
 
 [dev-dependencies]
+divan = { package = "codspeed-divan-compat", version = "6.1.0" }
 pretty_assertions = "1.4.1"
 rayon = "1.12.0"
 rstest = "0.28.0"
@@ -84,3 +85,7 @@ cli = ["dep:clap", "dep:tracing-subscriber"]
 
 [workspace]
 members = ["hem-lambda"]
+
+[[bench]]
+name = "sum_bench"
+harness = false
