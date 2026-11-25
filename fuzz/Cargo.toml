@@ -1,5 +1,5 @@
 [package]
-name = "hem-lambda-fuzz"
+name = "hem-fuzz"
 version = "0.0.0"
 publish = false
 resolver = "3"

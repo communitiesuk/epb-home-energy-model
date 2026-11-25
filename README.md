@@ -43,33 +43,6 @@ cargo run --release --features="cli indicatif" -- path/to/input.json -e path/to/
 The `cli` feature above is mandatory for a run from the CLI. The `indicatif` feature switches on the output of a
 progress bar.
 
-### In AWS Lambda
-
-There is a package in the Cargo workspace called `hem-lambda` that can be used to run the HEM calculation within [AWS
-Lambda](https://aws.amazon.com/pm/lambda/).
-
-Using the [cargo-lambda](https://www.cargo-lambda.info) toolchain, you can build a Lambda function (in the below case
-targeting ARM64 i.e. Graviton2) as follows:
-
-```bash
-cargo lambda build --arm64 -r --package=hem-lambda
-```
-
-You can then (given configured AWS access - you may wish to use [aws-vault](https://github.com/99designs/aws-vault) for
-this) deploy to AWS using e.g.:
-
-```bash
-cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
-```
-
-You can also test the lambda by running it locally:
-
-```bash
-cargo lambda watch --package hem-lambda
-```
-
-Then you can use Postman for example to call it (e.g. http://localhost:9000/lambda-url/hem-lambda)
-
 ## Contributing
 
 ### Using the commit template

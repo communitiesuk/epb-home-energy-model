@@ -83,9 +83,6 @@ inherits = "profiling"
 [features]
 cli = ["dep:clap", "dep:tracing-subscriber"]
 
-[workspace]
-members = ["hem-lambda"]
-
 [[bench]]
 name = "sum_bench"
 harness = false
