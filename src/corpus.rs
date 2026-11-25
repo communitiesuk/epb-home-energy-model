@@ -7779,9 +7779,7 @@ pub enum BuildError {
     InvalidHeatSourceWetForCombiBoiler(&'static str),
     #[error("A heat pump with a heat network source must also specify an energy supply for the heat network using the `EnergySupply_heat_network` field.")]
     HeatPumpWithHeatNetworkSourceMissingEnergySupply,
-    #[error(
-        "A heat pump with a heat network source must also specify a `temp_flow_limit_upper` field."
-    )]
+    #[error("A heat pump heat source must also specify a `temp_flow_limit_upper` field.")]
     HeatPumpHeatSourceMissingTempFlowLimitUpperField,
     #[error("Names for heat sources (pre-heated and hot water sources) must be unique within the input: {0} was found in more than one location.")]
     HeatSourceNamesNotUnique(String),
