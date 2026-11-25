@@ -1,4 +1,5 @@
 use crate::compare_floats::min_of_2;
+use crate::summing::precise_sum;
 use accurate::{sum::Sum2, traits::*};
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -54,10 +55,7 @@ pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f
     (0..total_steps)
         .step_by(steps_per_day)
         .map(|y| {
-            timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>()
+            precise_sum(&timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())])
         })
         .collect()
 }

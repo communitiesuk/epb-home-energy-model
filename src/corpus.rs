@@ -119,6 +119,7 @@ use crate::output::{
 };
 use crate::output::{OutputEmitters, OutputMetadata};
 use crate::statistics::percentile;
+use crate::summing::precise_sum;
 use crate::StringOrNumber;
 use crate::{convert_profile_to_daily, HEM_VERSION};
 use accurate::{sum::Sum2, traits::*};
@@ -3422,12 +3423,9 @@ impl Corpus {
                 fuel_summary
                     .iter()
                     .filter_map(|(conn_name, energy_cons)| {
-                        energy_supply_conn_names.contains(conn_name).then_some(
-                            energy_cons
-                                .iter()
-                                .copied()
-                                .sum_with_accumulator::<Sum2<_>>(),
-                        )
+                        energy_supply_conn_names
+                            .contains(conn_name)
+                            .then_some(precise_sum(energy_cons))
                     })
                     .sum::<f64>()
             })
@@ -3574,14 +3572,7 @@ impl Corpus {
                 Some(hc_name) if !hc_name.is_empty() => hc_name,
                 _ => continue,
             };
-            hc_output_overall.insert(
-                hc_name.clone(),
-                hc_output
-                    .iter()
-                    .copied()
-                    .sum_with_accumulator::<Sum2<_>>()
-                    .abs(),
-            );
+            hc_output_overall.insert(hc_name.clone(), precise_sum(hc_output).abs());
             hc_input_overall.insert(
                 hc_name.clone(),
                 Self::energy_consumed_for_conn_names(
@@ -3638,10 +3629,7 @@ impl Corpus {
             let mut total_generated = 0.;
             let mut total_consumed = 0.;
             for result_value in result.values() {
-                let sum_arr = result_value
-                    .iter()
-                    .copied()
-                    .sum_with_accumulator::<Sum2<_>>();
+                let sum_arr = precise_sum(result_value);
                 if sum_arr < 0. {
                     total_generated += sum_arr.abs();
                 } else {
@@ -3649,51 +3637,18 @@ impl Corpus {
                 }
             }
 
-            let grid_to_consumption = output_core.grid_to_consumption[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
-            let generation_to_grid = output_core.generation_to_grid[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>()
-                .abs();
-            let storage_to_grid = output_core.storage_to_grid[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>()
-                .abs();
-            let gen_to_storage = output_core.energy_to_storage[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
-            let storage_to_consumption = output_core.energy_from_storage[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>()
-                .abs();
-            let gen_to_diverter = output_core.energy_diverted[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
-            let gen_curtailed = output_core.generation_curtailed[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
-            let total_gross_import = output_core.energy_import[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
-            let total_gross_export = output_core.energy_export[key]
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
+            let grid_to_consumption = precise_sum(&output_core.grid_to_consumption[key]);
+            let generation_to_grid = precise_sum(&output_core.generation_to_grid[key]).abs();
+            let storage_to_grid = precise_sum(&output_core.storage_to_grid[key]).abs();
+            let gen_to_storage = precise_sum(&output_core.energy_to_storage[key]);
+            let storage_to_consumption = precise_sum(&output_core.energy_from_storage[key]).abs();
+            let gen_to_diverter = precise_sum(&output_core.energy_diverted[key]);
+            let gen_curtailed = precise_sum(&output_core.generation_curtailed[key]);
+            let total_gross_import = precise_sum(&output_core.energy_import[key]);
+            let total_gross_export = precise_sum(&output_core.energy_export[key]);
 
-            let total_energy_into_battery = gen_to_storage
-                + output_core.storage_from_grid[key]
-                    .iter()
-                    .copied()
-                    .sum_with_accumulator::<Sum2<_>>();
+            let total_energy_into_battery =
+                gen_to_storage + precise_sum(&output_core.storage_from_grid[key]);
             let storage_eff = if total_energy_into_battery > 0. {
                 (storage_to_consumption + storage_to_grid) / total_energy_into_battery
             } else {
@@ -3714,11 +3669,7 @@ impl Corpus {
                     net_import: total_gross_import + total_gross_export,
                     generation_to_storage: gen_to_storage,
                     storage_to_consumption,
-                    grid_to_storage: output_core.storage_from_grid[key]
-                        .iter()
-                        .copied()
-                        .sum_with_accumulator::<Sum2<_>>()
-                        .abs(),
+                    grid_to_storage: precise_sum(&output_core.storage_from_grid[key]).abs(),
                     generation_to_diverter: gen_to_diverter,
                     generation_curtailed: gen_curtailed,
                     storage_efficiency: Some(storage_eff),
@@ -3741,10 +3692,7 @@ impl Corpus {
                 delivered_energy_dict.insert(fuel.clone(), IndexMap::from([("total".into(), 0.)]));
 
                 for (end_use, delivered_energy) in end_uses {
-                    let sum_delivered_energy = delivered_energy
-                        .iter()
-                        .copied()
-                        .sum_with_accumulator::<Sum2<_>>();
+                    let sum_delivered_energy = precise_sum(delivered_energy);
                     if sum_delivered_energy > 0.
                         || relative_eq!(
                             sum_delivered_energy,
@@ -3779,21 +3727,11 @@ impl Corpus {
                 .insert(hws_name.clone(), percentile(daily_hw_demand, 75));
         }
 
-        let space_heat_demand_total = output_core
-            .zone_data
-            .space_heat_demand
-            .values()
-            .flatten()
-            .copied()
-            .sum_with_accumulator::<Sum2<_>>();
+        let space_heat_demand_total =
+            precise_sum(output_core.zone_data.space_heat_demand.values().flatten());
 
-        let space_cool_demand_total = output_core
-            .zone_data
-            .space_cool_demand
-            .values()
-            .flatten()
-            .copied()
-            .sum_with_accumulator::<Sum2<_>>();
+        let space_cool_demand_total =
+            precise_sum(output_core.zone_data.space_cool_demand.values().flatten());
 
         OutputSummary {
             total_floor_area: self.total_floor_area,

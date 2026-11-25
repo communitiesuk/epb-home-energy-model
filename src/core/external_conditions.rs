@@ -4,7 +4,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::simulation_time::{SimulationTimeIterator, Timestep, HOURS_IN_DAY};
 use crate::core::units::{Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY};
 use crate::input::ExternalConditionsInput;
-use accurate::{sum::Sum2, traits::*};
+use crate::summing::precise_sum;
 use anyhow::{anyhow, bail};
 #[cfg(test)]
 use approx::{AbsDiffEq, RelativeEq};
@@ -379,11 +379,7 @@ impl ExternalConditions {
                 return None;
             }
 
-            let sum: f64 = self
-                .air_temps
-                .iter()
-                .copied()
-                .sum_with_accumulator::<Sum2<_>>();
+            let sum: f64 = precise_sum(&self.air_temps);
             Some(sum / self.air_temps.len() as f64)
         })
     }
@@ -401,10 +397,7 @@ impl ExternalConditions {
                 let (idx_start, idx_end) = (idx_start as usize, idx_end as usize);
                 // Get air temperatures for the current month
                 let air_temps_month = &self.air_temps[idx_start..idx_end];
-                let sum: f64 = air_temps_month
-                    .iter()
-                    .copied()
-                    .sum_with_accumulator::<Sum2<_>>();
+                let sum: f64 = precise_sum(air_temps_month);
                 sum / air_temps_month.len() as f64
             })
     }
@@ -446,11 +439,7 @@ impl ExternalConditions {
             bail!("Expected external conditions to contain wind_speeds for entire year")
         }
 
-        let sum: f64 = self
-            .wind_speeds
-            .iter()
-            .copied()
-            .sum_with_accumulator::<Sum2<_>>();
+        let sum: f64 = precise_sum(&self.wind_speeds);
 
         Ok(sum / self.wind_speeds.len() as f64)
     }

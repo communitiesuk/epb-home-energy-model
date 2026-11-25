@@ -15,6 +15,7 @@ pub mod output;
 pub mod output_writer;
 pub mod read_weather_file;
 pub mod statistics;
+pub mod summing;
 
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::external_conditions::ExternalConditions;

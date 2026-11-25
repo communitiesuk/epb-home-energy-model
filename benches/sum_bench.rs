@@ -1,8 +1,7 @@
-use accurate::{
-    sum::{Kahan, Klein, NaiveSum, Neumaier, OnlineExactSum, Sum2, Sum3},
-    traits::*,
-};
+use accurate::sum::{Kahan, Klein, NaiveSum, Neumaier, OnlineExactSum, Sum2, Sum3};
+use accurate::traits::{SumAccumulator, SumWithAccumulator};
 use divan::{black_box, Bencher};
+use std::borrow::Borrow;
 
 const LEN: usize = 17_520;
 
@@ -48,22 +47,35 @@ where
 fn sum2_simd_lanes<const LANES: usize>(bencher: Bencher) {
     bencher
         .with_inputs(sample_data)
-        .bench_refs(|data| sum2_simd::<LANES>(black_box(data.as_slice())));
+        .bench_refs(|data| sum2_simd::<LANES, _>(black_box(data.as_slice())));
 }
 
 #[inline]
-pub fn sum2_simd<const LANES: usize>(values: &[f64]) -> f64 {
+pub fn sum2_simd<const LANES: usize, I>(values: I) -> f64
+where
+    I: IntoIterator,
+    I::Item: Borrow<f64>,
+{
     let mut lanes = [Sum2::<f64>::zero(); LANES];
-    let mut chunks = values.chunks_exact(LANES);
+    let mut iter = values.into_iter();
 
-    for chunk in &mut chunks {
+    'outer: loop {
+        let mut chunk = [0.0; LANES];
+        for (idx, slot) in chunk.iter_mut().enumerate() {
+            match iter.next() {
+                Some(v) => *slot = *v.borrow(),
+                None => {
+                    for i in 0..idx {
+                        lanes[i] += chunk[i];
+                    }
+                    break 'outer;
+                }
+            }
+        }
+
         for i in 0..LANES {
             lanes[i] += chunk[i];
         }
-    }
-
-    for (i, &rem) in chunks.remainder().iter().enumerate() {
-        lanes[i] += rem;
     }
 
     // Evaluate each lane to `f64` via `.sum()`, then combine with `Sum2`
