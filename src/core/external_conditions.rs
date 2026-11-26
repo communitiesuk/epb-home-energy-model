@@ -651,13 +651,20 @@ impl ExternalConditions {
 
         // #first set up parameters needed for the calculation
         let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(timestep.index);
+
+        // We can return all zeroes if there is zero diffuse horizontal radiation
+        // to improve performance
+        if diffuse_horizontal_radiation == 0. {
+            return DiffuseIrradiance(0.0, 0.0, 0.0, 0.0);
+        }
+
         let f1 = self.f1_circumsolar_brightness_coefficients[timestep.index];
         let f2 = self.f2_horizontal_brightness_coefficients[timestep.index];
 
         // # Calculate components of diffuse radiation
         let diffuse_irr_sky =
             diffuse_horizontal_radiation * (1.0 - f1) * ((1.0 + tilt.to_radians().cos()) / 2.0);
-        let diffuse_irr_circumsolar = self.circumsolar_irradiance(tilt, orientation, timestep);
+        let diffuse_irr_circumsolar = self.circumsolar_irradiance(diffuse_horizontal_radiation, tilt, orientation, timestep);
         let diffuse_irr_horiz = diffuse_horizontal_radiation * f2 * tilt.to_radians().sin();
 
         DiffuseIrradiance(
@@ -697,11 +704,12 @@ impl ExternalConditions {
     ///                  surface normal, 0 to 360, in degrees;
     fn circumsolar_irradiance(
         &self,
+        diffuse_horizontal_radiation: f64,
         tilt: f64,
         orientation: Orientation360,
         timestep: Timestep,
     ) -> f64 {
-        self.diffuse_horizontal_radiation(timestep.index)
+            diffuse_horizontal_radiation
             * self.f1_circumsolar_brightness_coefficients[timestep.index]
             * self.a_over_b(tilt, orientation, timestep)
     }
@@ -720,8 +728,10 @@ impl ExternalConditions {
         orientation: Orientation360,
         timestep: Timestep,
     ) -> f64 {
+        // TODO do we need to call all of these?
+        let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(timestep.index);
         self.direct_irradiance(tilt, orientation, timestep)
-            + self.circumsolar_irradiance(tilt, orientation, timestep)
+            + self.circumsolar_irradiance(diffuse_horizontal_radiation, tilt, orientation, timestep)
     }
 
     /// calculates the total diffuse irradiance on an inclined surface excluding circumsolar
@@ -3938,6 +3948,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
                 external_conditions.circumsolar_irradiance(
+                    external_conditions.diffuse_horizontal_radiation(t_idx),
                     0.,
                     Orientation360::create_from_180(0.).unwrap(),
                     t_it
@@ -3959,6 +3970,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.circumsolar_irradiance(
+                    external_conditions.diffuse_horizontal_radiation(t_idx),
                     90.,
                     Orientation360::create_from_180(180.).unwrap(),
                     t_it
@@ -3970,6 +3982,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.circumsolar_irradiance(
+                    external_conditions.diffuse_horizontal_radiation(t_idx),
                     180.,
                     Orientation360::create_from_180(-180.).unwrap(),
                     t_it
