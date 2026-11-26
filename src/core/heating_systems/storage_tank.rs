@@ -736,60 +736,12 @@ impl StorageTank {
     /// When the temperature of the volume i is higher than the one of the upper volume,
     /// then the 2 volumes are melded. This iterative process is maintained until the temperature
     /// of the volume i is lower or equal to the temperature of the volume i+1.
-    fn rearrange_temperatures_before(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
-        let mut temp_s7_n = temp_s6_n.to_vec();
-
-        loop {
-            // Flag for which layers need mixing
-            let mut mix_layer_n: Vec<u8> = vec![0; self.number_of_volumes];
-
-            // for loop :-1 is important here!
-            // loop through layers from bottom to top, without including top layer.
-            // this is because the top layer has no upper layer to compare to
-            for i in 0..self.vol_n.len() - 1 {
-                if temp_s7_n[i] > temp_s7_n[i + 1]
-                    || relative_eq!(temp_s7_n[i], temp_s7_n[i + 1], max_relative = 1e-09)
-                {
-                    // set layers to mix
-                    mix_layer_n[i] = 1;
-                    mix_layer_n[i + 1] = 1;
-                    // mix temperatures of all applicable layers
-                    // note error in formula 12 in standard as adding temperature to volume
-                    // this is what I think they intended from the description (comment sic from Python code)
-                    let temp_mix = (0..self.vol_n.len())
-                        .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64)
-                        .sum_with_accumulator::<Sum2<_>>()
-                        / (0..self.vol_n.len())
-                            .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
-                            .sum_with_accumulator::<Sum2<_>>();
-                    // set same temperature for all applicable layers
-                    for j in 0..i + 2 {
-                        if mix_layer_n[j] == 1 {
-                            temp_s7_n[j] = temp_mix;
-                        }
-                    }
-                } else {
-                    // reset mixing as lower levels now stabilised
-                    mix_layer_n = vec![0; self.number_of_volumes];
-                }
-            }
-
-            if is_sorted(&temp_s7_n) {
-                break;
-            }
-        }
-
-        let q_h_sto_end = (0..self.vol_n.len())
-            .map(|i| self.rho * self.cp * self.vol_n[i] * temp_s7_n[i])
-            .collect::<Vec<f64>>();
-
-        (q_h_sto_end, temp_s7_n.to_owned())
-    }
-
     fn rearrange_temperatures(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
         let n = self.vol_n.len();
         let mut stack: Vec<LayerBlock> = Vec::with_capacity(n);
 
+        // In Python this is done as a nested loop
+        // We have replaced this with a Pool Adjacent Violators Algorithm (PAVA) which improves performance
         for i in 0..n {
             let vol = self.vol_n[i];
             let mut current = LayerBlock {
@@ -798,7 +750,6 @@ impl StorageTank {
                 vol_temp_sum: vol * temp_s6_n[i],
             };
 
-            // Merge backwards while the lower block is warmer than the current block
             while let Some(prev) = stack.last() {
                 let prev_t = prev.avg_temp();
                 let curr_t = current.avg_temp();
@@ -815,8 +766,7 @@ impl StorageTank {
 
             stack.push(current);
         }
-
-        // Reconstruct temp_s7_n and q_h_sto_end in a single pass
+        
         let mut temp_s7_n = temp_s6_n.to_vec();
         let mut q_h_sto_end = Vec::with_capacity(n);
         let rho_cp = self.rho * self.cp;
