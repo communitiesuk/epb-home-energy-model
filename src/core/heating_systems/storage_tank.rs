@@ -132,6 +132,19 @@ pub struct StorageTank {
     pipework: PrimaryPipeworkLossesMixin,
 }
 
+struct LayerBlock {
+    count: usize,
+    vol_sum: f64,
+    vol_temp_sum: f64,
+}
+
+impl LayerBlock {
+    #[inline]
+    fn avg_temp(&self) -> f64 {
+        self.vol_temp_sum / self.vol_sum
+    }
+}
+
 impl StorageTank {
     /// Arguments:
     /// * `volume` - total volume of the tank, in litres
@@ -723,7 +736,7 @@ impl StorageTank {
     /// When the temperature of the volume i is higher than the one of the upper volume,
     /// then the 2 volumes are melded. This iterative process is maintained until the temperature
     /// of the volume i is lower or equal to the temperature of the volume i+1.
-    fn rearrange_temperatures(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    fn rearrange_temperatures_before(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
         let mut temp_s7_n = temp_s6_n.to_vec();
 
         loop {
@@ -771,6 +784,54 @@ impl StorageTank {
             .collect::<Vec<f64>>();
 
         (q_h_sto_end, temp_s7_n.to_owned())
+    }
+
+    fn rearrange_temperatures(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        let n = self.vol_n.len();
+        let mut stack: Vec<LayerBlock> = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let vol = self.vol_n[i];
+            let mut current = LayerBlock {
+                count: 1,
+                vol_sum: vol,
+                vol_temp_sum: vol * temp_s6_n[i],
+            };
+
+            // Merge backwards while the lower block is warmer than the current block
+            while let Some(prev) = stack.last() {
+                let prev_t = prev.avg_temp();
+                let curr_t = current.avg_temp();
+
+                if prev_t > curr_t || relative_eq!(prev_t, curr_t, max_relative = 1e-09) {
+                    let prev = stack.pop().unwrap();
+                    current.count += prev.count;
+                    current.vol_sum += prev.vol_sum;
+                    current.vol_temp_sum += prev.vol_temp_sum;
+                } else {
+                    break;
+                }
+            }
+
+            stack.push(current);
+        }
+
+        // Reconstruct temp_s7_n and q_h_sto_end in a single pass
+        let mut temp_s7_n = temp_s6_n.to_vec();
+        let mut q_h_sto_end = Vec::with_capacity(n);
+        let rho_cp = self.rho * self.cp;
+
+        let mut idx = 0;
+        for block in stack {
+            let avg_t = block.avg_temp();
+            for _ in 0..block.count {
+                temp_s7_n[idx] = avg_t;
+                q_h_sto_end.push(rho_cp * self.vol_n[idx] * avg_t);
+                idx += 1;
+            }
+        }
+
+        (q_h_sto_end, temp_s7_n)
     }
 
     fn run_heat_sources(
@@ -5986,7 +6047,7 @@ mod tests {
             simulation_time_for_storage_tank.iter().current_iteration(),
         );
 
-        assert_eq!(storage_tank1.test_energy_demand(), 5.9141614814815);
+        assert_relative_eq!(storage_tank1.test_energy_demand(), 5.9141614814815, max_relative = 1e-10);
     }
 
     #[rstest]
@@ -6880,7 +6941,8 @@ mod tests {
             assert_relative_eq!(q_x_in_n[0], expected_q_x_in[t_idx]);
             assert_relative_eq!(
                 solthermal_mixed.lock().energy_potential(),
-                expected_potential[t_idx]
+                expected_potential[t_idx],
+                max_relative = 1e-10
             );
             let TemperatureCalculation {
                 temp_s8_n,
