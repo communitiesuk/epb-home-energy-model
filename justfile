@@ -3,7 +3,7 @@
 
 validate:
     #!/usr/bin/env bash
-    cd {{justfile_directory()}}/../epb-home-energy-model-output-validator && cargo run -- --rust-only && cargo test && cd {{justfile_directory()}}
+    cd {{ justfile_directory() }}/../epb-home-energy-model-output-validator && cargo run -- --rust-only && cargo test && cd {{ justfile_directory() }}
 
 unit:
     cargo test --lib
@@ -17,16 +17,14 @@ INPUT_FILE := "examples/input/core/short/demo_hp_buffer_tank_fancoils.json"
 
 # Build the image (cached)
 build:
-    docker build -t {{IMAGE}} .
-
+    docker build -t {{ IMAGE }} .
 
 run: build
     docker run --rm -it \
         -v $(pwd):/app \
         -w /app \
-        {{IMAGE}} \
-        cargo run --release --features="clap indicatif" -- {{INPUT_FILE}} --detailed-output-heating-cooling --heat-balance -e examples/weather_data/London_weather_EnergyPlus_format.epw
-
+        {{ IMAGE }} \
+        cargo run --release --features="clap indicatif" -- {{ INPUT_FILE }} --detailed-output-heating-cooling --heat-balance -e examples/weather_data/London_weather_EnergyPlus_format.epw
 
 docker-unit: build
     docker run --rm -it \
@@ -34,7 +32,7 @@ docker-unit: build
         --memory-swap=16g \
         -v $(pwd):/app \
         -w /app \
-        {{IMAGE}} \
+        {{ IMAGE }} \
         cargo test --lib
 
 docker-e2e: build
@@ -43,14 +41,14 @@ docker-e2e: build
         --memory-swap=16g \
         -v $(pwd):/app \
         -w /app \
-        {{IMAGE}} \
+        {{ IMAGE }} \
         cargo test --test e2e -- --nocapture
 
 docker-test: build
     docker run --rm -it \
         -v $(pwd):/app \
         -w /app \
-        {{IMAGE}} \
+        {{ IMAGE }} \
         cargo test -- --nocapture
 
 # Remove local Rust build artifacts + Docker leftovers
