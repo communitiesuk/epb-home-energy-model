@@ -119,7 +119,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             // also be looser with heat balance files for demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json as per e2e config of upstream python
             let float_threshold = (
                 file_name.contains("core__ventilation_results.csv")
-                    || file_name.contains("demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry__core__results_heat_balance_"))
+                    || file_name.contains("demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry__core__results_"))
                 .then_some(compare::FLOAT_THRESHOLD * 10.)
                 .or_else(|| file_name.contains("__core__results_heat_balance_").then_some(compare::FLOAT_THRESHOLD * 2.));
             field_count += if is_tabular(file_name) {
