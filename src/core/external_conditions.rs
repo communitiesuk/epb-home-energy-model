@@ -149,6 +149,7 @@ pub struct ExternalConditions {
     solar_azimuth_angles: Vec<f64>,
     f1_circumsolar_brightness_coefficients: Vec<f64>,
     f2_horizontal_brightness_coefficients: Vec<f64>,
+    sun_vectors: Vec<[f64; 3]>,
 }
 
 /// Arguments:
@@ -330,6 +331,16 @@ impl ExternalConditions {
             })
             .collect::<Vec<f64>>();
 
+        let simtime = simulation_time.clone();
+
+        // these are used in solar_angle_of_incidence
+        // we pre-calculate them for each timestep here
+        let sun_vectors = simtime.map(|it| {
+            let solar_declination =  solar_declinations[it.current_day() as usize];
+            let solar_hour_angle = solar_hour_angles[it.current_hour() as usize];
+            Self::sun_vector(latitude, solar_declination, solar_hour_angle)
+        }).collect_vec();
+
         Self {
             air_temps,
             air_temp_annual: OnceLock::new(),
@@ -352,6 +363,7 @@ impl ExternalConditions {
             solar_azimuth_angles,
             f1_circumsolar_brightness_coefficients,
             f2_horizontal_brightness_coefficients,
+            sun_vectors,
         }
     }
 
@@ -513,26 +525,46 @@ impl ExternalConditions {
         orientation: Orientation360,
         timestep: Timestep,
     ) -> f64 {
-        //set up/ shadow some vars as radians for trig stuff
-        let tilt = tilt.to_radians();
-        let orientation_180 = orientation.transform_to_180().to_radians();
-        let latitude = self.latitude.to_radians();
-        let solar_declination: f64 =
-            self.solar_declinations[timestep.current_day() as usize].to_radians();
-        let solar_hour_angle: f64 =
-            self.solar_hour_angles[timestep.current_hour() as usize].to_radians();
+        // NOTE in Python this is done in a single function
+        // but we have split it into this, sun_vector, surface_normal
+        // and cos_angle_of_incidence
+        // to allow only calculating the sun_vectors once per timestep
+        let normal = Self::surface_normal(tilt, orientation);
+        let sun = self.sun_vectors[timestep.index];
+        Self::cos_angle_of_incidence(normal, sun)
+            .clamp(-1.0, 1.0)
+            .acos()
+            .to_degrees()
+    }
 
-        (solar_declination.sin() * latitude.sin() * tilt.cos()
-            - solar_declination.sin() * latitude.cos() * tilt.sin() * orientation_180.cos()
-            + solar_declination.cos() * latitude.cos() * tilt.cos() * solar_hour_angle.cos()
-            + solar_declination.cos()
-                * latitude.sin()
-                * tilt.sin()
-                * orientation_180.cos()
-                * solar_hour_angle.cos()
-            + solar_declination.cos() * tilt.sin() * orientation_180.sin() * solar_hour_angle.sin())
-        .acos()
-        .to_degrees()
+    pub(crate) fn sun_vector(latitude: f64, solar_declination: f64, solar_hour_angle: f64) -> [f64; 3] {
+        let (sin_lat, cos_lat) = latitude.to_radians().sin_cos();
+        let (sin_dec, cos_dec) = solar_declination
+            .to_radians()
+            .sin_cos();
+        let (sin_ha, cos_ha) = solar_hour_angle
+            .to_radians()
+            .sin_cos();
+
+        [
+            cos_dec * sin_lat * cos_ha - sin_dec * cos_lat,
+            cos_dec * sin_ha,
+            sin_dec * sin_lat + cos_dec * cos_lat * cos_ha,
+        ]
+    }
+
+    fn surface_normal(tilt: f64, orientation: Orientation360) -> [f64; 3] {
+        let (sin_tilt, cos_tilt) = tilt.to_radians().sin_cos();
+        let (sin_ori, cos_ori) = orientation.transform_to_180().to_radians().sin_cos();
+        [
+            sin_tilt * cos_ori,
+            sin_tilt * sin_ori,
+            cos_tilt,
+        ]
+    }
+
+    fn cos_angle_of_incidence(normal: [f64; 3], sun: [f64; 3]) -> f64 {
+        normal[0] * sun[0] + normal[1] * sun[1] + normal[2] * sun[2]
     }
 
     /// calculates the azimuth angle between sun and the inclined surface,
@@ -593,11 +625,12 @@ impl ExternalConditions {
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the inclined
         //                   surface normal, 0 to 360, in degrees;
+        let normal = Self::surface_normal(tilt, orientation);
+        let sun = self.sun_vectors[timestep.index];
+
         let direct_irradiance = self.direct_beam_radiation(timestep.index)
-            * self
-                .solar_angle_of_incidence(tilt, orientation, timestep)
-                .to_radians()
-                .cos();
+            * Self::cos_angle_of_incidence(normal, sun);
+
         if direct_irradiance < 0.0 {
             0.0
         } else {
@@ -618,11 +651,13 @@ impl ExternalConditions {
         // #dimensionless parameters a & b
         // #describing the incidence-weighted solid angle sustained by the circumsolar region as seen
         // #respectively by the tilted surface and the horizontal.
+
+        let sun = self.sun_vectors[timestep.index];
+        let normal = Self::surface_normal(tilt, orientation);
+
         let a = max_of_2(
             0.,
-            self.solar_angle_of_incidence(tilt, orientation, timestep)
-                .to_radians()
-                .cos(),
+            Self::cos_angle_of_incidence(normal, sun)
         );
         let b = max_of_2(
             85.0f64.to_radians().cos(),
